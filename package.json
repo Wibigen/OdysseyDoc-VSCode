@@ -1,0 +1,832 @@
+{
+  "name": "odysseydoc",
+  "version": "3.2.0",
+  "description": "The OdysseyDoc documentation (Super Mario Odyssey decomp + Ghidra pseudo-code) inside VS Code: hovers, details, calls, fields, safe exlaunch hooks, WSL build and deployment.",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "compile": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=dist/extension.js --minify --sourcemap=external",
+    "watch": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=dist/extension.js --sourcemap --watch",
+    "package": "npm run compile && vsce package --no-dependencies -o OdysseyDoc-v3.2.vsix",
+    "test": "esbuild test/misc.test.ts --bundle --platform=node --outfile=out-test/misc.test.js --log-level=warning && node out-test/misc.test.js",
+    "test:site": "esbuild test/sweep.test.ts --bundle --platform=node --outfile=out-test/sweep.test.js --alias:vscode=./test/vscode-stub.ts --log-level=warning && node out-test/sweep.test.js"
+  },
+  "keywords": [
+    "odysseydoc",
+    "super mario odyssey",
+    "smo",
+    "exlaunch",
+    "switch",
+    "modding",
+    "decomp",
+    "ghidra"
+  ],
+  "author": {
+    "name": "WibiDev"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  },
+  "displayName": "OdysseyDoc",
+  "publisher": "wibidev",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onLanguage:cpp",
+    "onLanguage:c",
+    "workspaceContains:lib/exlaunch/exlaunch.hpp",
+    "onView:odysseydoc.entities"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "odysseydoc.quickBuild",
+        "title": "Quick build: copy this .cpp into the base, compile, fetch the build",
+        "category": "OdysseyDoc",
+        "icon": "$(play)"
+      },
+      {
+        "command": "odysseydoc.copyToBase",
+        "title": "Copy this .cpp into the base (src/main.cpp)",
+        "category": "OdysseyDoc",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "odysseydoc.locateBase",
+        "title": "Locate the exlaunch base",
+        "category": "OdysseyDoc",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "odysseydoc.openBaseMain",
+        "title": "Open the base's main.cpp",
+        "category": "OdysseyDoc",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "odysseydoc.restoreBackup",
+        "title": "Restore a base backup",
+        "category": "OdysseyDoc",
+        "icon": "$(history)"
+      },
+      {
+        "command": "odysseydoc.build",
+        "title": "Build the mod",
+        "category": "OdysseyDoc",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "odysseydoc.rebuild",
+        "title": "Rebuild all",
+        "category": "OdysseyDoc",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "odysseydoc.clean",
+        "title": "Clean the build",
+        "category": "OdysseyDoc",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "odysseydoc.configure",
+        "title": "Configure CMake (make configure)",
+        "category": "OdysseyDoc",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "odysseydoc.buildDeploy",
+        "title": "Build and deploy",
+        "category": "OdysseyDoc",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "odysseydoc.deploy",
+        "title": "Deploy (without rebuilding)",
+        "category": "OdysseyDoc",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "odysseydoc.addDeployTarget",
+        "title": "Add a deploy target",
+        "category": "OdysseyDoc",
+        "icon": "$(add)"
+      },
+      {
+        "command": "odysseydoc.setupClangd",
+        "title": "Set up code completion (clangd)",
+        "category": "OdysseyDoc",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "odysseydoc.searchFunction",
+        "title": "Search OdysseyDoc",
+        "category": "OdysseyDoc",
+        "icon": "$(search)"
+      },
+      {
+        "command": "odysseydoc.searchAndHook",
+        "title": "Search a function and generate a hook",
+        "category": "OdysseyDoc",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "odysseydoc.showFiche",
+        "title": "Show details for the entity under the cursor",
+        "category": "OdysseyDoc",
+        "icon": "$(info)"
+      },
+      {
+        "command": "odysseydoc.openGhidra",
+        "title": "Open the Ghidra pseudo-code",
+        "category": "OdysseyDoc",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "odysseydoc.openSource",
+        "title": "Open the source in the decomp",
+        "category": "OdysseyDoc",
+        "icon": "$(source-control)"
+      },
+      {
+        "command": "odysseydoc.generateHook",
+        "title": "Generate a hook for the function under the cursor",
+        "category": "OdysseyDoc",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "odysseydoc.generateHookFor",
+        "title": "Generate a hook",
+        "category": "OdysseyDoc",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "odysseydoc.copySymbol",
+        "title": "Copy the mangled symbol",
+        "category": "OdysseyDoc",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "odysseydoc.copyOffset",
+        "title": "Copy the offset",
+        "category": "OdysseyDoc",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "odysseydoc.goToOffset",
+        "title": "Go to an offset / address",
+        "category": "OdysseyDoc",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "odysseydoc.filterTree",
+        "title": "Filter by status",
+        "category": "OdysseyDoc",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "odysseydoc.refreshHooks",
+        "title": "Refresh hooks",
+        "category": "OdysseyDoc",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "odysseydoc.showOutput",
+        "title": "Show the log",
+        "category": "OdysseyDoc",
+        "icon": "$(output)"
+      },
+      {
+        "command": "odysseydoc.copyText",
+        "title": "Copy",
+        "category": "OdysseyDoc"
+      },
+      {
+        "command": "odysseydoc.insertInclude",
+        "title": "Add an #include",
+        "category": "OdysseyDoc"
+      },
+      {
+        "command": "odysseydoc.refreshData",
+        "title": "Reload the site data",
+        "category": "OdysseyDoc",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "odysseydoc.clearCache",
+        "title": "Clear the site data cache",
+        "category": "OdysseyDoc",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "odysseydoc.openSite",
+        "title": "Open the OdysseyDoc site",
+        "category": "OdysseyDoc",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "odysseydoc.openOnSite",
+        "title": "Open the entity on the OdysseyDoc site",
+        "category": "OdysseyDoc",
+        "icon": "$(link-external)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "odysseydoc.editorMenu",
+        "label": "OdysseyDoc"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "odysseydoc.copyText",
+          "when": "false"
+        },
+        {
+          "command": "odysseydoc.insertInclude",
+          "when": "false"
+        },
+        {
+          "command": "odysseydoc.generateHookFor",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "odysseydoc.searchFunction",
+          "when": "view == odysseydoc.entities",
+          "group": "navigation@1"
+        },
+        {
+          "command": "odysseydoc.goToOffset",
+          "when": "view == odysseydoc.entities",
+          "group": "navigation@2"
+        },
+        {
+          "command": "odysseydoc.filterTree",
+          "when": "view == odysseydoc.entities",
+          "group": "navigation@3"
+        },
+        {
+          "command": "odysseydoc.searchAndHook",
+          "when": "view == odysseydoc.hooks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "odysseydoc.refreshHooks",
+          "when": "view == odysseydoc.hooks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "odysseydoc.build",
+          "when": "view == odysseydoc.hooks",
+          "group": "1_build@1"
+        },
+        {
+          "command": "odysseydoc.buildDeploy",
+          "when": "view == odysseydoc.hooks",
+          "group": "1_build@2"
+        },
+        {
+          "command": "odysseydoc.addDeployTarget",
+          "when": "view == odysseydoc.hooks",
+          "group": "1_build@3"
+        },
+        {
+          "command": "odysseydoc.setupClangd",
+          "when": "view == odysseydoc.hooks",
+          "group": "2_setup"
+        },
+        {
+          "command": "odysseydoc.locateBase",
+          "when": "view == odysseydoc.hooks",
+          "group": "2_setup@0"
+        },
+        {
+          "command": "odysseydoc.restoreBackup",
+          "when": "view == odysseydoc.hooks",
+          "group": "2_setup@2"
+        },
+        {
+          "command": "odysseydoc.refreshData",
+          "when": "view == odysseydoc.entities",
+          "group": "1_data@1"
+        },
+        {
+          "command": "odysseydoc.openSite",
+          "when": "view == odysseydoc.entities",
+          "group": "1_data@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "odysseydoc.generateHookFor",
+          "when": "view == odysseydoc.entities && viewItem == docFnBin",
+          "group": "inline"
+        },
+        {
+          "command": "odysseydoc.generateHookFor",
+          "when": "view == odysseydoc.entities && viewItem == docFnBin",
+          "group": "1_hook"
+        },
+        {
+          "command": "odysseydoc.openGhidra",
+          "when": "view == odysseydoc.entities && viewItem == docFnBin",
+          "group": "2_open@2"
+        },
+        {
+          "command": "odysseydoc.openSource",
+          "when": "view == odysseydoc.entities && viewItem =~ /^doc/",
+          "group": "2_open@1"
+        },
+        {
+          "command": "odysseydoc.copySymbol",
+          "when": "view == odysseydoc.entities && viewItem == docFnBin",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "odysseydoc.copyOffset",
+          "when": "view == odysseydoc.entities && viewItem == docFnBin",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "odysseydoc.openOnSite",
+          "when": "view == odysseydoc.entities && viewItem =~ /^doc/",
+          "group": "2_open@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "submenu": "odysseydoc.editorMenu",
+          "when": "editorLangId == cpp || editorLangId == c || resourceScheme == smo-pseudo || resourceScheme == smo-decomp",
+          "group": "1_smo"
+        }
+      ],
+      "odysseydoc.editorMenu": [
+        {
+          "command": "odysseydoc.quickBuild",
+          "group": "0@1"
+        },
+        {
+          "command": "odysseydoc.copyToBase",
+          "group": "0@2"
+        },
+        {
+          "command": "odysseydoc.showFiche",
+          "group": "1@1"
+        },
+        {
+          "command": "odysseydoc.generateHook",
+          "group": "1@2"
+        },
+        {
+          "command": "odysseydoc.openSource",
+          "group": "2@1"
+        },
+        {
+          "command": "odysseydoc.openGhidra",
+          "group": "2@2"
+        },
+        {
+          "command": "odysseydoc.copySymbol",
+          "group": "3@1"
+        },
+        {
+          "command": "odysseydoc.copyOffset",
+          "group": "3@2"
+        },
+        {
+          "command": "odysseydoc.searchFunction",
+          "group": "4@1"
+        },
+        {
+          "command": "odysseydoc.openOnSite",
+          "group": "2@3"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "odysseydoc.quickBuild",
+          "when": "resourceScheme == file && (editorLangId == cpp || editorLangId == c)",
+          "group": "navigation@90"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "odysseydoc.quickBuild",
+          "when": "resourceExtname =~ /^\\.(cpp|cc|cxx)$/",
+          "group": "7_smo@1"
+        },
+        {
+          "command": "odysseydoc.copyToBase",
+          "when": "resourceExtname =~ /^\\.(cpp|cc|cxx)$/",
+          "group": "7_smo@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "odysseydoc.quickBuild",
+        "key": "f7",
+        "when": "editorTextFocus && (editorLangId == cpp || editorLangId == c) && !isInDiffEditor"
+      },
+      {
+        "command": "odysseydoc.searchFunction",
+        "key": "ctrl+alt+shift+f",
+        "mac": "cmd+alt+shift+f"
+      },
+      {
+        "command": "odysseydoc.generateHook",
+        "key": "ctrl+alt+shift+h",
+        "mac": "cmd+alt+shift+h",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "odysseydoc.showFiche",
+        "key": "ctrl+alt+shift+i",
+        "mac": "cmd+alt+shift+i",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "odysseydoc.openGhidra",
+        "key": "ctrl+alt+shift+p",
+        "mac": "cmd+alt+shift+p",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "odysseydoc.build",
+        "key": "ctrl+alt+shift+b",
+        "mac": "cmd+alt+shift+b"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "odysseydoc",
+          "title": "OdysseyDoc",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "odysseydoc": [
+        {
+          "id": "odysseydoc.hooks",
+          "name": "Project hooks",
+          "icon": "media/activity.svg"
+        },
+        {
+          "id": "odysseydoc.entities",
+          "name": "OdysseyDoc explorer",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "odysseydoc.hooks",
+        "contents": "No hooks yet.\n[$(folder-opened) Locate the exlaunch base](command:odysseydoc.locateBase)\n[$(zap) Generate a hook](command:odysseydoc.searchAndHook)\n[$(play) Quick build of the .cpp](command:odysseydoc.quickBuild)\n[$(globe) Open the OdysseyDoc site](command:odysseydoc.openSite)"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "odysseydoc",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "build",
+              "rebuild",
+              "clean",
+              "configure",
+              "buildDeploy"
+            ],
+            "description": "OdysseyDoc action"
+          }
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "cpp",
+        "path": "./snippets/smo.code-snippets"
+      }
+    ],
+    "configuration": {
+      "title": "OdysseyDoc",
+      "properties": {
+        "odysseydoc.siteUrl": {
+          "type": "string",
+          "default": "https://wibigen.github.io/OdysseyDoc/",
+          "markdownDescription": "URL of the OdysseyDoc site that provides **all** the data (index, details, decomp sources, Ghidra pseudo-code, strings)."
+        },
+        "odysseydoc.localSitePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional: local clone of the site (the `OdysseyDoc` folder containing `data/`, or the root of the `wibigen.github.io` repo). Used instead of the online site: offline, or to test a regenerated site before publishing it."
+        },
+        "odysseydoc.navigation.fromGhidra": {
+          "type": "string",
+          "enum": [
+            "ghidra",
+            "decomp"
+          ],
+          "default": "ghidra",
+          "markdownDescription": "F12 in Ghidra pseudo-code: open the called function's pseudo-code (`ghidra`) or its decomp source when it exists (`decomp`)."
+        },
+        "odysseydoc.pseudo.inlayFields": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "In pseudo-code, show the field name next to `this + 0x…` (from the class offsets on the site)."
+        },
+        "odysseydoc.exlaunchBase": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder of your exlaunch base ([SMO-Exlaunch-Base](https://github.com/Fuzzy2319/SMO-Exlaunch-Base)). Windows path, UNC (`\\\\wsl.localhost\\Ubuntu\\home\\…`) or WSL Linux path (`/home/…`). Empty = asked on the first build (command **OdysseyDoc: Locate the exlaunch base**)."
+        },
+        "odysseydoc.base.copyLocalIncludes": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When copying the .cpp into the base, also copy the local headers it includes (`#include \"MyFile.h\"` next to it) into `src/`."
+        },
+        "odysseydoc.quickBuild.outputSubfolder": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Subfolder (next to the .cpp) where the quick build output is copied. Empty = right next to the .cpp."
+        },
+        "odysseydoc.quickBuild.extraFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Files of the build folder to copy in addition to `subsdk9` and `main.npdm` (e.g. `subsdk9.elf`)."
+        },
+        "odysseydoc.build.useWsl": {
+          "type": "string",
+          "default": "auto",
+          "markdownDescription": "On Windows, run `make` inside WSL. `auto` = yes on Windows.",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ]
+        },
+        "odysseydoc.build.wslDistro": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "WSL distribution to use (empty = default distribution, or the one from the `\\\\wsl.localhost\\<distro>` path)."
+        },
+        "odysseydoc.build.wslMountRoot": {
+          "type": "string",
+          "default": "/mnt/",
+          "markdownDescription": "Mount point of the Windows drives inside WSL."
+        },
+        "odysseydoc.build.command": {
+          "type": "string",
+          "default": "make",
+          "markdownDescription": "Build command (run at the project root)."
+        },
+        "odysseydoc.build.cleanCommand": {
+          "type": "string",
+          "default": "make clean",
+          "markdownDescription": "Clean command."
+        },
+        "odysseydoc.build.configureCommand": {
+          "type": "string",
+          "default": "make configure",
+          "markdownDescription": "CMake configure command (also generates `build/compile_commands.json`)."
+        },
+        "odysseydoc.build.outputDir": {
+          "type": "string",
+          "default": "build",
+          "markdownDescription": "Build output folder."
+        },
+        "odysseydoc.build.subsdkName": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Name of the produced subsdk (empty = read from `CMakeLists.txt`, `set(SUBSDKX …)`)."
+        },
+        "odysseydoc.build.env": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Environment variables added before the command, e.g. `{ \"DEVKITPRO\": \"/opt/devkitpro\" }`. `DEVKITPRO` defaults to `/opt/devkitpro` when not set."
+        },
+        "odysseydoc.build.revealTerminal": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the terminal while building."
+        },
+        "odysseydoc.build.focusProblems": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Open the Problems panel when the build fails."
+        },
+        "odysseydoc.deploy.targets": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Deploy targets (use the **OdysseyDoc: Add a deploy target** command).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "folder",
+                  "ftp"
+                ]
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "path": {
+                "type": "string",
+                "description": "Folder (SD root, Ryujinx folder, load folder, or exefs)"
+              },
+              "layout": {
+                "type": "string",
+                "enum": [
+                  "atmosphere",
+                  "ryujinx",
+                  "yuzu",
+                  "exefs"
+                ]
+              },
+              "modName": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "number",
+                "default": 5000
+              },
+              "user": {
+                "type": "string"
+              },
+              "password": {
+                "type": "string"
+              },
+              "remoteRoot": {
+                "type": "string",
+                "default": "/"
+              }
+            }
+          }
+        },
+        "odysseydoc.deploy.afterBuild": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Deploy automatically after every successful build."
+        },
+        "odysseydoc.deploy.titleId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Title ID (empty = `CONFIG_TITLE_ID` from `CMakeLists.txt`, otherwise 0100000000010000)."
+        },
+        "odysseydoc.deploy.modName": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Mod folder name for Ryujinx / yuzu (empty = project folder name)."
+        },
+        "odysseydoc.deploy.romfsDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "romfs folder to deploy as well (relative to the project), e.g. `romfs`."
+        },
+        "odysseydoc.deploy.ftpVerbose": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Log FTP traffic in the OdysseyDoc output."
+        },
+        "odysseydoc.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show OdysseyDoc details on hover."
+        },
+        "odysseydoc.hover.useClangd": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask clangd to identify the hovered function exactly."
+        },
+        "odysseydoc.hover.hexOffsets": {
+          "type": "string",
+          "default": "contextual",
+          "markdownDescription": "Hover on hexadecimal numbers: `contextual` = only on InstallAtOffset / patch / Offset lines.",
+          "enum": [
+            "contextual",
+            "always",
+            "never"
+          ]
+        },
+        "odysseydoc.hover.maxCandidates": {
+          "type": "number",
+          "default": 4,
+          "markdownDescription": "Max number of functions shown when a name is ambiguous."
+        },
+        "odysseydoc.hover.previewLines": {
+          "type": "number",
+          "default": 14,
+          "markdownDescription": "Lines of code (OdysseyDecomp, then Ghidra) shown in the hover (0 = none)."
+        },
+        "odysseydoc.hooks.askKind": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask for the hook type (trampoline / replace / inline) every time a hook is generated."
+        },
+        "odysseydoc.hooks.defaultKind": {
+          "type": "string",
+          "default": "trampoline",
+          "markdownDescription": "Hook type when not asking.",
+          "enum": [
+            "trampoline",
+            "replace",
+            "inline"
+          ]
+        },
+        "odysseydoc.hooks.installMode": {
+          "type": "string",
+          "default": "symbol",
+          "markdownDescription": "Generated install: `symbol` = `InstallAtSymbol(\"_Z…\")`, `offset` = `InstallAtOffset(0x…)`.",
+          "enum": [
+            "symbol",
+            "offset"
+          ]
+        },
+        "odysseydoc.hooks.insertLocation": {
+          "type": "string",
+          "default": "auto",
+          "markdownDescription": "Where to insert the hook: `auto` (at the cursor, or before exl_main if the cursor is inside it), `cursor`, `beforeExlMain`, `clipboard`.",
+          "enum": [
+            "auto",
+            "cursor",
+            "beforeExlMain",
+            "clipboard"
+          ]
+        },
+        "odysseydoc.hooks.addInclude": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically add the hooked class's `#include` if it exists in `include/`."
+        },
+        "odysseydoc.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the target function above every `InstallAtSymbol` / `InstallAtOffset` / patch."
+        },
+        "odysseydoc.diagnostics.checkHooks": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Report unknown symbols, and offsets that are misaligned or inside a function."
+        },
+        "odysseydoc.pseudo.inlayStrings": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "In pseudo-code, show string text next to addresses."
+        },
+        "odysseydoc.pseudo.openBeside": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Open pseudo-code and decomp beside the current editor."
+        },
+        "odysseydoc.navigation.definitionsInMyCode": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "F12 / Ctrl+click in your own code also offers the decomp source / pseudo-code (always on in OdysseyDoc documents)."
+        },
+        "odysseydoc.clangd.suggestSetup": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer to set up clangd the first time the project is opened."
+        }
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Wibigen/wibigen.github.io"
+  },
+  "homepage": "https://wibigen.github.io/OdysseyDoc/"
+}

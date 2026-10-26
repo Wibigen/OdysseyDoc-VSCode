@@ -1,0 +1,176 @@
+{
+  "Hook trampoline (exlaunch)": {
+    "prefix": ["smo-hook-trampoline", "hooktramp"],
+    "description": "HOOK_DEFINE_TRAMPOLINE: your code, then the original function (Orig)",
+    "body": [
+      "HOOK_DEFINE_TRAMPOLINE(${1:Name}Hook) {",
+      "    static ${2:void} Callback(${3:${4:Class}* thisPtr}) {",
+      "        $0",
+      "        ${5:Orig(thisPtr);}",
+      "    }",
+      "};"
+    ]
+  },
+  "Hook replace (exlaunch)": {
+    "prefix": ["smo-hook-replace", "hookrepl"],
+    "description": "HOOK_DEFINE_REPLACE: replaces the function entirely",
+    "body": [
+      "HOOK_DEFINE_REPLACE(${1:Name}Replace) {",
+      "    static ${2:void} Callback(${3:${4:Class}* thisPtr}) {",
+      "        $0",
+      "    }",
+      "};"
+    ]
+  },
+  "Hook inline (exlaunch)": {
+    "prefix": ["smo-hook-inline", "hookinline"],
+    "description": "HOOK_DEFINE_INLINE: runs at one instruction, with register access",
+    "body": [
+      "HOOK_DEFINE_INLINE(${1:Name}Inline) {",
+      "    static void Callback(exl::hook::${2|InlineCtx,InlineFloatCtx|}* ctx) {",
+      "        // ctx->X[0..30] (64 bits), ctx->W[0..30] (32 bits)${2/InlineFloatCtx/, ctx->S[n] \\/ ctx->D[n] (floats)/}",
+      "        $0",
+      "    }",
+      "};"
+    ]
+  },
+  "Install a hook by symbol": {
+    "prefix": ["smo-install-symbol", "installsym"],
+    "body": ["${1:Name}Hook::InstallAtSymbol(\"${2:_ZN...}\");"]
+  },
+  "Install a hook by offset": {
+    "prefix": ["smo-install-offset", "installoff"],
+    "body": ["${1:Name}Hook::InstallAtOffset(${2:0x0});"]
+  },
+  "Full exl_main": {
+    "prefix": ["smo-exl-main", "exlmain"],
+    "description": "exlaunch entry point",
+    "body": [
+      "extern \"C\" void exl_main(void* x0, void* x1) {",
+      "    /* Setup hooking environment. */",
+      "    exl::hook::Initialize();",
+      "",
+      "    $0",
+      "}"
+    ]
+  },
+  "Instruction patch (CodePatcher)": {
+    "prefix": ["smo-patch", "codepatch"],
+    "description": "Rewrites one or more instructions at a main offset",
+    "body": [
+      "exl::patch::CodePatcher ${1:p}(${2:0x0});",
+      "${1:p}.WriteInst(exl::armv8::inst::${3|Nop(),Ret(),Movz(exl::armv8::reg::W0\\, 1)|});$0"
+    ]
+  },
+  "Log exlaunch": {
+    "prefix": ["smo-log", "exllog"],
+    "body": ["Logging.Log(\"${1:message} %d\", ${2:value});$0"]
+  },
+  "Actor nerves (anonymous namespace)": {
+    "prefix": ["smo-nerves", "nerves"],
+    "description": "Declares a class's nerves with NERVE_IMPL + NERVES_MAKE_NOSTRUCT",
+    "body": [
+      "namespace {",
+      "NERVE_IMPL(${1:MyActor}, ${2:Wait});",
+      "NERVE_IMPL(${1:MyActor}, ${3:Move});",
+      "",
+      "NERVES_MAKE_NOSTRUCT(${1:MyActor}, ${2:Wait}, ${3:Move});",
+      "}  // namespace",
+      "$0"
+    ]
+  },
+  "Nerve exe function": {
+    "prefix": ["smo-exe", "exe"],
+    "description": "void Class::exeXxx() with isFirstStep / isActionEnd",
+    "body": [
+      "void ${1:MyActor}::exe${2:Wait}() {",
+      "    if (al::isFirstStep(this))",
+      "        al::startAction(this, \"${3:${2:Wait}}\");",
+      "",
+      "    $0",
+      "    if (al::isActionEnd(this))",
+      "        al::setNerve(this, &${4:Next});",
+      "}"
+    ]
+  },
+  "Actor class (header)": {
+    "prefix": ["smo-actor-header", "actorh"],
+    "description": "OdysseyDecomp-style LiveActor skeleton",
+    "body": [
+      "#pragma once",
+      "",
+      "#include \"Library/LiveActor/LiveActor.h\"",
+      "",
+      "class ${1:MyActor} : public al::LiveActor {",
+      "public:",
+      "    ${1:MyActor}(const char* name);",
+      "",
+      "    void init(const al::ActorInitInfo& info) override;",
+      "    void control() override;",
+      "    bool receiveMsg(const al::SensorMsg* message, al::HitSensor* other, al::HitSensor* self) override;",
+      "",
+      "    void exeWait();",
+      "$0",
+      "private:",
+      "};"
+    ]
+  },
+  "Actor class (source)": {
+    "prefix": ["smo-actor-cpp", "actorcpp"],
+    "description": "Minimal LiveActor implementation",
+    "body": [
+      "#include \"${1:MyActor}.h\"",
+      "",
+      "#include \"Library/LiveActor/ActorInitUtil.h\"",
+      "#include \"Library/LiveActor/ActorActionFunction.h\"",
+      "#include \"Library/Nerve/NerveSetupUtil.h\"",
+      "#include \"Library/Nerve/NerveUtil.h\"",
+      "",
+      "namespace {",
+      "NERVE_IMPL(${1:MyActor}, Wait);",
+      "NERVES_MAKE_NOSTRUCT(${1:MyActor}, Wait);",
+      "}  // namespace",
+      "",
+      "${1:MyActor}::${1:MyActor}(const char* name) : al::LiveActor(name) {}",
+      "",
+      "void ${1:MyActor}::init(const al::ActorInitInfo& info) {",
+      "    al::initActorWithArchiveName(this, info, \"${2:ArchiveName}\", nullptr);",
+      "    al::initNerve(this, &Wait, 0);",
+      "    makeActorAlive();",
+      "}",
+      "",
+      "void ${1:MyActor}::control() {}",
+      "",
+      "bool ${1:MyActor}::receiveMsg(const al::SensorMsg* message, al::HitSensor* other, al::HitSensor* self) {",
+      "    return false;",
+      "}",
+      "",
+      "void ${1:MyActor}::exeWait() {",
+      "    if (al::isFirstStep(this))",
+      "        al::startAction(this, \"Wait\");",
+      "    $0",
+      "}"
+    ]
+  },
+  "Controller button pressed": {
+    "prefix": ["smo-pad", "padtrigger"],
+    "body": ["if (al::isPadTrigger${1|A,B,X,Y,L,R,ZL,ZR,Up,Down,Left,Right,Plus,Minus|}(${2:-1})) {", "    $0", "}"]
+  },
+  "Per-frame hook on StageScene::exePlay": {
+    "prefix": ["smo-hook-stagescene", "exeplay"],
+    "description": "Trampoline on StageScene::exePlay (called every in-game frame)",
+    "body": [
+      "HOOK_DEFINE_TRAMPOLINE(StageSceneExePlayHook) {",
+      "    static void Callback(StageScene* scene) {",
+      "        $0",
+      "        Orig(scene);",
+      "    }",
+      "};",
+      "// in exl_main: StageSceneExePlayHook::InstallAtSymbol(\"_ZN10StageScene7exePlayEv\");"
+    ]
+  },
+  "Formatted FixedSafeString": {
+    "prefix": ["smo-format", "fmtstr"],
+    "body": ["sead::FixedSafeString<${1:0x100}> ${2:str};", "${2:str}.format(\"${3:%s}\", ${4:arg});$0"]
+  }
+}

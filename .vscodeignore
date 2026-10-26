@@ -1,0 +1,13 @@
+src/**
+test/**
+out/**
+out-test/**
+tools/**
+node_modules/**
+**/*.map
+**/*.ts
+tsconfig.json
+BUILD_VSIX.cmd
+BUILD_VSIX.sh
+*.vsix
+.gitignore
