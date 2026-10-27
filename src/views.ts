@@ -179,7 +179,7 @@ export class HooksTree implements vscode.TreeDataProvider<HNode> {
             if (root && f.uri.fsPath === root.fsPath) continue;
             (await vscode.workspace.findFiles(new vscode.RelativePattern(f, "**/*.{cpp,cc,cxx}"), "{**/build/**,**/node_modules/**,**/.git/**}", 300)).forEach(add);
         }
-        if (!files.length) return [{ t: "empty", msg: "No .cpp open and no exlaunch base located" }];
+        if (!files.length) return [{ t: "empty", msg: "No .cpp open and no mod base located" }];
         const hooks = new Map<string, HookItem>();
         const installs: HookItem["installs"] = [];
         const patches: HookItem["installs"] = [];
@@ -195,7 +195,7 @@ export class HooksTree implements vscode.TreeDataProvider<HNode> {
                 }
             const lineOf = (idx: number) => text.slice(0, idx).split("\n").length - 1;
             const { refs, defs } = scanSource(text);
-            for (const d of defs) hooks.set(d.name, { name: d.name, kind: d.kind, file: f, line: lineOf(d.start), installs: [] });
+            for (const d of defs) hooks.set(d.name, { name: d.name, kind: (d.framework === "hakkun" ? "Hakkun " : "exlaunch ") + d.kind, file: f, line: lineOf(d.start), installs: [] });
             for (const r of refs) {
                 let target: number | undefined;
                 let delta: number | undefined;
@@ -241,7 +241,7 @@ export class HooksTree implements vscode.TreeDataProvider<HNode> {
                 !h.installs.length ? "warning" : h.installs.every((i) => i.target !== undefined) ? "zap" : "error",
                 !h.installs.length ? new vscode.ThemeColor("list.warningForeground") : undefined,
             );
-            it.tooltip = `${h.kind} — ${h.installs.length} installation(s)${!h.installs.length ? "\nNo InstallAt… call found" : ""}`;
+            it.tooltip = `${h.kind} — ${h.installs.length} installation(s)${!h.installs.length ? "\nNo install call found (InstallAt… / installAt…)" : ""}`;
             it.command = { command: "vscode.open", title: "", arguments: [h.file, { selection: new vscode.Range(h.line, 0, h.line, 0) }] };
             it.contextValue = "docHook";
             return it;

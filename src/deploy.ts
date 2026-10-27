@@ -3,7 +3,8 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { FtpClient } from "./core/ftp";
-import { buildDir, cfg, ensureBase, projectRoot, subsdkName, titleId } from "./env";
+import { cfg, ensureBase, projectRoot, titleId } from "./env";
+import { buildOutputs } from "./framework";
 import { DocState } from "./state";
 
 export type Layout = "atmosphere" | "ryujinx" | "yuzu" | "exefs";
@@ -52,18 +53,12 @@ function walkFiles(dir: string, base = dir, out: string[] = []): string[] {
 }
 
 function plan(root: vscode.Uri, layout: Layout, modName: string): { files: FilePlan[]; missing: string[] } {
-    const bd = buildDir(root);
-    const sub = subsdkName(root);
     const tid = titleId(root);
     const dirs = layoutDirs(layout, tid, modName);
     const join = (a: string, b: string) => (a ? `${a}/${b}` : b);
-    const files: FilePlan[] = [];
-    const missing: string[] = [];
-    for (const f of [sub, "main.npdm"]) {
-        const p = path.join(bd, f);
-        if (fs.existsSync(p)) files.push({ local: p, rel: join(dirs.exefs, f) });
-        else missing.push(p);
-    }
+    const out = buildOutputs(root);
+    const files: FilePlan[] = out.files.map((f) => ({ local: f.local, rel: join(dirs.exefs, f.name) }));
+    const missing = out.missing;
     const romfs = cfg<string>("deploy.romfsDir", "");
     if (romfs) {
         const rd = path.isAbsolute(romfs) ? romfs : path.join(root.fsPath, romfs);
@@ -100,7 +95,7 @@ export async function deployAll(st: DocState, log: (s: string) => void): Promise
         }
         try {
             if (t.type === "folder") {
-                if (!t.path) throw new Error("chemin manquant");
+                if (!t.path) throw new Error("path missing");
                 const base = expandHome(t.path);
                 if (!fs.existsSync(base)) throw new Error(`folder not found: ${base} (SD card not plugged in?)`);
                 for (const f of files) {

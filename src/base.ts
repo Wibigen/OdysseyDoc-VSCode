@@ -138,7 +138,7 @@ export async function copyToBaseCommand(st: DocState, uri?: vscode.Uri) {
     const r = await syncToBase(st, target);
     if (!r) return;
     if (r.insideBase) {
-        vscode.window.showInformationMessage("This file is already part of the exlaunch base: nothing to copy.");
+        vscode.window.showInformationMessage("This file is already part of the mod base: nothing to copy.");
         return;
     }
     const extra = r.files.length > 1 ? ` (+ ${r.files.length - 1} local header(s))` : "";
@@ -177,7 +177,7 @@ export async function restoreBackupCommand(st: DocState) {
         }
         return { label: d.replace(/^(\d{4}-\d\d-\d\d)-(\d\d)-(\d\d)-(\d\d)$/, "$1 $2:$3:$4 UTC"), description: list.join(", "), detail: origin, full, list, origin };
     });
-    const pick = await vscode.window.showQuickPick(items, { title: "Restore files of the exlaunch base" });
+    const pick = await vscode.window.showQuickPick(items, { title: "Restore files of the mod base" });
     if (!pick || !pick.origin) return;
     for (const rel of pick.list) {
         const dst = path.join(pick.origin, rel);

@@ -4,21 +4,51 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { identityMapper, makeWslMapper, PathMapper, shQuote, uncDistro, winToWsl, wslToWin } from "./core/paths";
+import { Framework, frameworkOfBase, frameworkOfText, HakkunConfig, hakkunConfig } from "./core/hakkun";
 
 export function cfg<T>(key: string, def: T): T {
     return vscode.workspace.getConfiguration("odysseydoc").get<T>(key, def);
 }
 
-/** Does a folder look like an exlaunch base (SMO-Exlaunch-Base)? */
-export function isExlaunchBase(dir: string): boolean {
+/** Framework of a base folder (exlaunch: SMO-Exlaunch-Base ; Hakkun: Hakkun-Example / Hakkun-Template). */
+export function detectBaseFramework(dir: string): Framework | undefined {
     try {
-        return (
-            fs.existsSync(path.join(dir, "CMakeLists.txt")) &&
-            (fs.existsSync(path.join(dir, "lib", "exlaunch")) || fs.existsSync(path.join(dir, "module", "subsdk.json.template")))
-        );
+        if (!fs.existsSync(path.join(dir, "CMakeLists.txt"))) return undefined;
+        return frameworkOfBase((rel) => fs.existsSync(path.join(dir, ...rel.split("/"))));
     } catch {
-        return false;
+        return undefined;
     }
+}
+
+/** Does a folder look like a mod base (exlaunch or Hakkun)? */
+export function isExlaunchBase(dir: string): boolean {
+    return detectBaseFramework(dir) !== undefined;
+}
+
+/** Framework of the located base: the odysseydoc.framework setting, else detected from the folder (default exlaunch). */
+export function baseFramework(root?: vscode.Uri): Framework {
+    const forced = cfg<string>("framework", "auto");
+    if (forced === "exlaunch" || forced === "hakkun") return forced;
+    const r = root ?? projectRoot();
+    return (r && detectBaseFramework(r.fsPath)) || "exlaunch";
+}
+
+/** Framework for a given source: setting, then the file's own syntax, then the base. */
+export function frameworkFor(text?: string): Framework {
+    const forced = cfg<string>("framework", "auto");
+    if (forced === "exlaunch" || forced === "hakkun") return forced;
+    return (text !== undefined ? frameworkOfText(text) : undefined) ?? baseFramework();
+}
+
+export function readHakkunConfig(root: vscode.Uri): HakkunConfig {
+    const rd = (rel: string) => {
+        try {
+            return fs.readFileSync(path.join(root.fsPath, rel), "utf8");
+        } catch {
+            return "";
+        }
+    };
+    return hakkunConfig(rd("config/config.cmake"), rd("CMakeLists.txt"));
 }
 
 /** Path typed in the setting -> path usable by VS Code ("/home/x" on Windows -> \\wsl.localhost\<distro>\home\x). */
@@ -33,7 +63,7 @@ export function resolveBasePath(p: string): string {
 }
 
 /**
- * exlaunch base used for building. Order: the odysseydoc.exlaunchBase setting (located once and for all),
+ * Mod base (exlaunch or Hakkun) used for building. Order: the odysseydoc.exlaunchBase setting (located once and for all),
  * then a folder open in VS Code that is itself a base.
  */
 export function projectRoot(): vscode.Uri | undefined {
@@ -48,22 +78,22 @@ export function projectRoot(): vscode.Uri | undefined {
     return undefined;
 }
 
-/** Asks the user where their exlaunch base is and saves it (user setting). */
+/** Asks the user where their mod base (exlaunch or Hakkun) is and saves it (user setting). */
 export async function locateBase(reason?: string): Promise<vscode.Uri | undefined> {
     const pick = await vscode.window.showQuickPick(
         [
             { label: "$(folder-opened) Pick the folder…", description: "file dialog (\\\\wsl.localhost\\… works)", v: "dialog" },
-            { label: "$(terminal-linux) Type a path", description: "e.g. /home/me/SMO-Exlaunch-Base or C:\\Mods\\SMO-Exlaunch-Base", v: "type" },
+            { label: "$(terminal-linux) Type a path", description: "e.g. /home/me/SMO-Exlaunch-Base or C:\\Mods\\Hakkun-Example", v: "type" },
         ],
-        { title: reason ? `Locate the exlaunch base — ${reason}` : "Locate the exlaunch base", placeHolder: "Folder containing CMakeLists.txt, Makefile, lib/exlaunch, src/…" },
+        { title: reason ? `Locate the mod base — ${reason}` : "Locate the mod base (exlaunch or Hakkun)", placeHolder: "exlaunch: CMakeLists.txt + lib/exlaunch · Hakkun: CMakeLists.txt + sys/ (LibHakkun) + config/" },
     );
     if (!pick) return undefined;
     let chosen: string | undefined;
     if (pick.v === "dialog") {
-        const r = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, canSelectMany: false, title: "Base exlaunch (SMO-Exlaunch-Base)", openLabel: "Use this base" });
+        const r = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, canSelectMany: false, title: "Mod base (SMO-Exlaunch-Base or Hakkun project)", openLabel: "Use this base" });
         chosen = r?.[0]?.fsPath;
     } else {
-        chosen = await vscode.window.showInputBox({ title: "Path of the exlaunch base", prompt: "Windows path, UNC path or WSL Linux path", value: cfg<string>("exlaunchBase", "") });
+        chosen = await vscode.window.showInputBox({ title: "Path of the mod base", prompt: "Windows path, UNC path or WSL Linux path", value: cfg<string>("exlaunchBase", "") });
     }
     if (!chosen) return undefined;
     const resolved = resolveBasePath(chosen);
@@ -73,18 +103,19 @@ export async function locateBase(reason?: string): Promise<vscode.Uri | undefine
     }
     if (!isExlaunchBase(resolved)) {
         const ok = await vscode.window.showWarningMessage(
-            `${resolved} does not look like an exlaunch base (expected CMakeLists.txt + lib/exlaunch).`,
+            `${resolved} does not look like a mod base (exlaunch: CMakeLists.txt + lib/exlaunch ; Hakkun: CMakeLists.txt + sys/cmake + config/VersionList.sym). Did you clone the submodules (git submodule update --init --recursive)?`,
             "Use it anyway",
             "Cancel",
         );
         if (ok !== "Use it anyway") return undefined;
     }
     await vscode.workspace.getConfiguration("odysseydoc").update("exlaunchBase", chosen.trim(), vscode.ConfigurationTarget.Global);
-    vscode.window.showInformationMessage(`exlaunch base: ${resolved}`);
+    const fw = detectBaseFramework(resolved);
+    vscode.window.showInformationMessage(`${fw === "hakkun" ? "Hakkun" : "exlaunch"} base: ${resolved}`);
     return vscode.Uri.file(resolved);
 }
 
-/** The exlaunch base, asking for it if it is not known yet. */
+/** The mod base, asking for it if it is not known yet. */
 export async function ensureBase(reason?: string): Promise<vscode.Uri | undefined> {
     return projectRoot() ?? (await locateBase(reason));
 }
@@ -187,10 +218,11 @@ export function runCapture(command: string, env: ExecEnv, cwdHost: string, input
     });
 }
 
-/** subsdk name defined in CMakeLists.txt (set(SUBSDKX subsdk9)). */
+/** subsdk name: exlaunch CMakeLists.txt set(SUBSDKX subsdk9), Hakkun config.cmake set(MODULE_BINARY subsdk4). */
 export function subsdkName(root: vscode.Uri): string {
     const s = cfg<string>("build.subsdkName", "");
     if (s) return s;
+    if (baseFramework(root) === "hakkun") return readHakkunConfig(root).moduleBinary;
     try {
         const txt = fs.readFileSync(path.join(root.fsPath, "CMakeLists.txt"), "utf8");
         const m = /set\s*\(\s*SUBSDKX\s+(\w+)\s*\)/.exec(txt);
@@ -204,6 +236,7 @@ export function subsdkName(root: vscode.Uri): string {
 export function titleId(root: vscode.Uri): string {
     const s = cfg<string>("deploy.titleId", "");
     if (s) return s.replace(/^0x/i, "").toUpperCase();
+    if (baseFramework(root) === "hakkun") return readHakkunConfig(root).titleId;
     try {
         const txt = fs.readFileSync(path.join(root.fsPath, "CMakeLists.txt"), "utf8");
         const m = /set\s*\(\s*CONFIG_TITLE_ID\s+0x([0-9a-fA-F]+)\s*\)/.exec(txt);

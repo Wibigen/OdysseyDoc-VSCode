@@ -1,0 +1,16 @@
+{
+  "scopeName": "source.hakkun-sym",
+  "name": "Hakkun symbols (sail)",
+  "patterns": [
+    { "include": "#comments" },
+    { "match": "^\\s*(@)([\\w.-]+)(?:\\s*(:)\\s*([\\w,\\s]+))?", "captures": { "1": { "name": "keyword.control.sym" }, "2": { "name": "entity.name.namespace.sym" }, "3": { "name": "punctuation.separator.sym" }, "4": { "name": "constant.numeric.sym" } } },
+    { "match": "\\b(readAdrpGlobal)\\b", "name": "support.function.sym" },
+    { "match": "\"[^\"]*\"", "name": "string.quoted.double.sym" },
+    { "match": "\\b0x[0-9A-Fa-f]+\\b|\\b[0-9A-Fa-f?]{8,}\\b|\\b\\d+\\b", "name": "constant.numeric.sym" },
+    { "match": "^\\s*(\\$?[A-Za-z_][\\w$.@]*)", "captures": { "1": { "name": "entity.name.function.sym" } } },
+    { "match": "[=+\\-<>]", "name": "keyword.operator.sym" }
+  ],
+  "repository": {
+    "comments": { "patterns": [{ "match": "//.*$", "name": "comment.line.double-slash.sym" }, { "begin": "/\\*", "end": "\\*/", "name": "comment.block.sym" }] }
+  }
+}

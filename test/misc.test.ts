@@ -44,3 +44,108 @@ eq(stripTpl("sead::Vector3<float>::zero"), "sead::Vector3::zero", "stripTpl");
 eq(parseGccIncludeDirs("x\n#include <...> search starts here:\n /a/b\n /c\nEnd of search list.\n"), ["/a/b","/c"], "gcc dirs");
 const t = transformEntry({directory:"/h/build", file:"/h/src/m.cpp", command:"/opt/x/g++ -I/h/inc -isystem /opt/i -mtp=soft -specs=/x.specs -o a.o -c /h/src/m.cpp"}, {mapPath:(x)=>"W"+x, gccIncludes:["/opt/x/lib/gcc/aarch64-none-elf/14.2.0/include","/opt/x/aarch64-none-elf/include"]});
 eq(t.arguments!.filter(a=>!a.startsWith("-W")&&!a.startsWith("--target")&&!a.startsWith("-nostd")), ["clang++","-isystem","W/opt/x/aarch64-none-elf/include","-IW/h/inc","-isystem","W/opt/i","-c","W/h/src/m.cpp"], "compdb transform");
+
+// ---------------------------------------------------------------- Hakkun
+import { addSymbolToSymText, declaredSymbols, frameworkOfText, gameModuleAlias, hakkunConfig, parseSym, symFileFor } from "../src/core/hakkun";
+{
+    const hk = `#include "hk/hook/Trampoline.h"
+HkTrampoline marioControl = [](TrampolineStatic(), al::LiveActor* player) -> void { orig(player); };
+HkReplace<bool, const Shine*> shineIsGotReplace = [](const Shine* self) -> bool { return true; };
+// x.installAtSym<"_Zcommented">();
+extern "C" void hkMain() {
+    marioControl.installAtSym<"_ZN19PlayerActorHakoniwa7controlEv">();
+    shineIsGotReplace.installAtMainOffset(0x1D2D48);
+    hk::hook::writeBranchLinkAtMainOffset(0x10, test);
+    hk::hook::a64::assemble<"nop">().installAtMainOffset(0x20);
+    hk::ro::getMainModule()->writeRo<u32>(0x30, 0);
+    hk::hook::writeBranchAtSym<"_ZN2al8setNerveEPNS_9IUseNerveEPKNS_5NerveE">(test);
+}`;
+    const r = scanSource(hk);
+    eq(r.defs.map((d) => `${d.framework}:${d.kind}:${d.name}`), ["hakkun:trampoline:marioControl", "hakkun:replace:shineIsGotReplace"], "hk defs");
+    eq(r.refs.map((x) => `${x.kind}:${x.hookName}:${x.method}:${x.value}:${hk.slice(x.start, x.end)}`), [
+        "symbol:marioControl:installAtSym:_ZN19PlayerActorHakoniwa7controlEv:_ZN19PlayerActorHakoniwa7controlEv",
+        "offset:shineIsGotReplace:installAtMainOffset:0x1D2D48:0x1D2D48",
+        "patch::writeBranchLinkAtMainOffset:0x10:0x10",
+        "patch::installAtMainOffset:0x20:0x20",
+        "write::writeRo:0x30:0x30",
+        "symbol::writeBranchAtSym:_ZN2al8setNerveEPNS_9IUseNerveEPKNS_5NerveE:_ZN2al8setNerveEPNS_9IUseNerveEPKNS_5NerveE",
+    ], "hk refs");
+    eq(frameworkOfText(hk), "hakkun", "framework hakkun");
+    eq(frameworkOfText(`#include <exlaunch.hpp>\nHOOK_DEFINE_TRAMPOLINE(A) {};`), "exlaunch", "framework exlaunch");
+    eq(frameworkOfText(`int main() {}`), undefined, "framework none");
+
+    const sym = `@smo:100,101,110,120
+
+_ZN19PlayerActorHakoniwa7controlEv // comment
+
+@smo:130
+_ZN19PlayerActorHakoniwa7controlEv = 0x003c3200
+`;
+    const b = parseSym(sym);
+    eq(b.map((x) => [x.module, x.versions.join(","), x.entries.map((e) => e.name + (e.value ? "=" + e.value : "")).join(" ")]), [
+        ["smo", "100,101,110,120", "_ZN19PlayerActorHakoniwa7controlEv"],
+        ["smo", "130", "_ZN19PlayerActorHakoniwa7controlEv=0x003c3200"],
+    ], "parseSym");
+    eq([...declaredSymbols([sym, "@sdk\n\n_ZN2nn2os11SleepThreadENS_8TimeSpanE"])], ["_ZN19PlayerActorHakoniwa7controlEv", "_ZN2nn2os11SleepThreadENS_8TimeSpanE"], "declaredSymbols");
+    const vers = ["100", "101", "110", "120"];
+    eq(addSymbolToSymText(sym, "_ZN19PlayerActorHakoniwa7controlEv", "smo", vers), undefined, "addSymbol already there");
+    eq(addSymbolToSymText(sym, "_ZN5Shine5isGotEv", "smo", vers)!.split("\n").slice(0, 4), ["@smo:100,101,110,120", "", "_ZN19PlayerActorHakoniwa7controlEv // comment", "_ZN5Shine5isGotEv"], "addSymbol into block");
+    eq(addSymbolToSymText("", "_ZN5Shine5isGotEv", "smo", ["100"]), "@smo:100\n\n_ZN5Shine5isGotEv\n", "addSymbol new file");
+    eq(addSymbolToSymText("@smo:130\nx = 0x10\n", "_ZN5Shine5isGotEv", "smo", ["130"])!.endsWith("@smo:130\n\n_ZN5Shine5isGotEv\n"), true, "addSymbol skips offset block");
+    eq(gameModuleAlias("@rtld = nnrtld\n@smo = RedStar.nss\n100 = 3ca1\n@multimedia\n@sdk = nnSdk\n100 = ae34\n"), "smo", "game module alias");
+    eq(gameModuleAlias("@rtld = nnrtld\n@game = Foo.nss\n100 = 3ca1\n@sdk = nnSdk\n100 = ae34\n"), "game", "game module alias custom");
+    eq(
+        ["src/Item/Shine.h", "lib/al/Library/Nerve/NerveUtil.h", "lib/sead/include/prim/seadSafeString.h", "lib/NintendoSDK/include/nn/hid.h", "lib/agl/include/agl/common/aglDrawContext.h", undefined].map(symFileFor),
+        ["game/Item/Shine.sym", "al/Library/Nerve/NerveUtil.sym", "sead/prim/seadSafeString.sym", "nn/hid.sym", "agl/agl/common/aglDrawContext.sym", "odysseydoc.sym"],
+        "symFileFor",
+    );
+    const c = hakkunConfig("set(MODULE_NAME Hakkun-Example)\nset(TITLE_ID 0x0100000000010000)\nset(MODULE_BINARY subsdk4)\nset(USE_SAIL TRUE)", "project(Hakkun-Example VERSION 1.0 LANGUAGES ASM C CXX)");
+    eq(c, { moduleName: "Hakkun-Example", titleId: "0100000000010000", moduleBinary: "subsdk4", useSail: true, projectName: "Hakkun-Example" }, "hakkunConfig");
+}
+
+// ---------------------------------------------------------------- ld.lld / sail output
+{
+    const p = new GccOutputParser((x) => x, { hakkun: true });
+    for (const l of [
+        "[ 50%] Linking CXX executable Hakkun-Example",
+        "ld.lld: error: undefined symbol: al::isPadHoldA(int)",
+        ">>> referenced by main.cpp:21 (/home/me/base/src/main.cpp:21)",
+        ">>>               CMakeFiles/Hakkun-Example.dir/src/main.cpp.o:(...)",
+        ">>> referenced by main.cpp:40 (/home/me/base/src/main.cpp:40)",
+        "ld.lld: error: undefined symbol: _ZN2al10isPadHoldAEi",
+        ">>> referenced by main.cpp:22 (/home/me/base/src/main.cpp:22)",
+        "clang++: error: linker command failed with exit code 1 (use -v to see invocation)",
+        "sail: syntax error at /home/me/base/syms/game/Item/Shine.sym:3: unexpected token",
+    ]) p.feedLine(l);
+    p.finish();
+    eq(p.diags.map((d) => [d.file, d.line, d.code ?? "", d.message.split(" — ")[0], d.notes.length]), [
+        ["/home/me/base/src/main.cpp", 21, "odysseydoc-undefined-symbol", "undefined symbol: al::isPadHoldA(int)", 1],
+        ["/home/me/base/src/main.cpp", 22, "odysseydoc-undefined-symbol", "undefined symbol: _ZN2al10isPadHoldAEi", 0],
+        ["/home/me/base/syms/game/Item/Shine.sym", 3, "", "sail: syntax error: unexpected token", 0],
+    ], "lld undefined + sail");
+}
+
+// ---------------------------------------------------------------- insertion helpers
+import { adaptIncludeStyle, topLevelLine } from "../src/core/insert";
+{
+    const t = `#include "al/Library/LiveActor/LiveActor.h"
+
+namespace {
+// comment
+HkTrampoline a = [](TrampolineStatic(), al::LiveActor* p) -> void {
+    if (x) {
+        y();
+    }
+    orig(p);
+};
+}
+
+extern "C" void hkMain() {
+    a.installAtSym<"_Z">();
+}
+`;
+    eq([0, 2, 4, 6, 7, 9, 11, 13, 14].map((l) => topLevelLine(t, l)), [0, 2, 4, 3, 3, 3, 11, 12, 12], "topLevelLine");
+    eq(adaptIncludeStyle(t, '"Library/LiveActor/ActorPoseUtil.h"'), '"al/Library/LiveActor/ActorPoseUtil.h"', "include style al/");
+    eq(adaptIncludeStyle("#include \"game/Player/PlayerActorHakoniwa.h\"", '"Item/Shine.h"'), '"game/Item/Shine.h"', "include style game/");
+    eq(adaptIncludeStyle("#include <exlaunch.hpp>", '"Library/LiveActor/ActorPoseUtil.h"'), '"Library/LiveActor/ActorPoseUtil.h"', "include style unchanged");
+}

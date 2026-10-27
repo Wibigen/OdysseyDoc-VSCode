@@ -20,7 +20,7 @@ export function isResolvingViaClangd() {
     return insideClangdHover;
 }
 
-const HEX_CONTEXT = /InstallAt(Offset|Ptr)|GetTargetOffset|GetTargetStart|CodePatcher|RandomAccessPatcher|Patcher|patch|Offset|offset|0x71[0-9a-fA-F]{8}/;
+const HEX_CONTEXT = /InstallAt(Offset|Ptr)|installAt(MainOffset|Offset)|AtMainOffset|write(Ro|Rw)|GetTargetOffset|GetTargetStart|CodePatcher|RandomAccessPatcher|Patcher|patch|Offset|offset|0x71[0-9a-fA-F]{8}/;
 
 export function splitParams(p: string): string[] {
     const out: string[] = [];
@@ -167,7 +167,14 @@ export async function resolveAt(
     const ix = await st.ix();
     const lineText = doc.lineAt(pos.line).text;
 
-    // 1. mangled symbol inside a string
+    // 1. mangled symbol inside a string (or bare, in a Hakkun .sym file)
+    if (doc.languageId === "hakkun-sym") {
+        const r = doc.getWordRangeAtPosition(pos, /_Z[\w.$]+/);
+        if (r) {
+            const w = doc.getText(r);
+            return { ids: await findByMangled(st, ix, w), range: r, how: "mangled", word: w };
+        }
+    }
     for (const m of lineText.matchAll(/"(_Z[\w.$]+)"/g)) {
         const s = m.index! + 1;
         const e = s + m[1].length;

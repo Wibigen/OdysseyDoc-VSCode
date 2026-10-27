@@ -3,8 +3,10 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { GccOutputParser, ParsedDiag } from "./core/gccparse";
-import { buildDir, cfg, ensureBase, getExecEnv, projectRoot, shellSpawn, subsdkName } from "./env";
+import { baseFramework, buildDir, cfg, ensureBase, getExecEnv, projectRoot, shellSpawn } from "./env";
 import { syncToBase } from "./base";
+import { buildOutputs } from "./framework";
+import { shQuote } from "./core/paths";
 import { DocState } from "./state";
 
 export type BuildAction = "build" | "clean" | "rebuild" | "configure" | "buildDeploy" | "quick";
@@ -30,10 +32,21 @@ const LABELS: Record<BuildAction, string> = {
     quick: "Quick build",
 };
 
+/** Hakkun has no Makefile wrapper: plain CMake in the build folder (configured on the first build). */
+function hakkunCommands(): { build: string; clean: string; configure: string } {
+    const out = shQuote(cfg<string>("build.outputDir", "build"));
+    const type = cfg<string>("hakkun.buildType", "Release");
+    const configure = cfg<string>("hakkun.configureCommand", "") || `cmake -S . -B ${out} -DCMAKE_BUILD_TYPE=${type}`;
+    const build = cfg<string>("hakkun.buildCommand", "") || `{ [ -f ${out}/CMakeCache.txt ] || ${configure}; } && cmake --build ${out} --parallel $(nproc)`;
+    const clean = cfg<string>("hakkun.cleanCommand", "") || `cmake --build ${out} --target clean`;
+    return { build, clean, configure };
+}
+
 function commandFor(action: BuildAction): string {
-    const build = cfg<string>("build.command", "make");
-    const clean = cfg<string>("build.cleanCommand", "make clean");
-    const configure = cfg<string>("build.configureCommand", "make configure");
+    const hk = baseFramework() === "hakkun" ? hakkunCommands() : undefined;
+    const build = hk?.build ?? cfg<string>("build.command", "make");
+    const clean = hk?.clean ?? cfg<string>("build.cleanCommand", "make clean");
+    const configure = hk?.configure ?? cfg<string>("build.configureCommand", "make configure");
     switch (action) {
         case "clean":
             return clean;
@@ -72,7 +85,7 @@ export class BuildRunner {
         this.status.show();
     }
 
-    private idle(text = "$(tools) OdysseyDoc", tooltip = "Build the mod (make in the exlaunch base)") {
+    private idle(text = "$(tools) OdysseyDoc", tooltip = "Build the mod (in the exlaunch / Hakkun base)") {
         this.status.text = text;
         this.status.tooltip = tooltip;
         this.status.backgroundColor = undefined;
@@ -141,17 +154,17 @@ export class BuildRunner {
         await vscode.tasks.executeTask(this.makeTask("quick"));
     }
 
-    /** Copies the build outputs next to the .cpp. */
+    /** Copies the build outputs next to the .cpp (named as in exefs: subsdk9 / subsdk4, main.npdm). */
     private copyOutputs(root: vscode.Uri, q: QuickContext): string[] {
         const bd = buildDir(root);
-        const names = [subsdkName(root), "main.npdm", ...cfg<string[]>("quickBuild.extraFiles", [])];
+        const list = buildOutputs(root).files.map((f) => ({ src: f.local, name: f.name }));
+        for (const n of cfg<string[]>("quickBuild.extraFiles", [])) list.push({ src: path.join(bd, n), name: path.basename(n) });
         fs.mkdirSync(q.outDir, { recursive: true });
         const done: string[] = [];
-        for (const n of names) {
-            const src = path.join(bd, n);
-            if (!fs.existsSync(src)) continue;
-            fs.copyFileSync(src, path.join(q.outDir, path.basename(n)));
-            done.push(path.basename(n));
+        for (const f of list) {
+            if (!fs.existsSync(f.src)) continue;
+            fs.copyFileSync(f.src, path.join(q.outDir, f.name));
+            done.push(f.name);
         }
         return done;
     }
@@ -166,30 +179,36 @@ export class BuildRunner {
         const start = async () => {
             const root = projectRoot();
             if (!root) {
-                write(`${C.red}exlaunch base not located (command "OdysseyDoc: Locate the exlaunch base").${C.reset}\n`);
+                write(`${C.red}Mod base not located (command "OdysseyDoc: Locate the mod base").${C.reset}\n`);
                 closeEmitter.fire(1);
                 return;
             }
             this.running = true;
             const env = getExecEnv(root);
             const quick = action === "quick" ? this.quick : undefined;
-            const parser = new GccOutputParser((p) => {
-                const mapped = env.mapper.toHost(p);
-                const abs = path.isAbsolute(mapped) || /^\\\\/.test(mapped) ? mapped : path.join(root.fsPath, cfg("build.outputDir", "build"), mapped);
-                return quick?.overrides.get(normKey(abs)) ?? abs;
-            });
+            const fw = baseFramework(root);
+            const parser = new GccOutputParser(
+                (p) => {
+                    const mapped = env.mapper.toHost(p);
+                    const abs = path.isAbsolute(mapped) || /^\\\\/.test(mapped) ? mapped : path.join(root.fsPath, cfg("build.outputDir", "build"), mapped);
+                    return quick?.overrides.get(normKey(abs)) ?? abs;
+                },
+                { hakkun: fw === "hakkun" },
+            );
             this.diagnostics.clear();
             const command = commandFor(action);
             const needsConfigure = action !== "clean" && action !== "configure" && !fs.existsSync(path.join(root.fsPath, cfg("build.outputDir", "build"), "CMakeCache.txt"));
             const spec = shellSpawn(command, env, root.fsPath);
             const t0 = Date.now();
             this.status.text = `$(sync~spin) OdysseyDoc: ${LABELS[action].toLowerCase()}…`;
-            this.status.tooltip = "Compilation en cours";
+            this.status.tooltip = "Building…";
             write(`${C.cyan}${C.bold}▶ ${LABELS[action]}${C.reset}${C.dim}  (${spec.display})${C.reset}\n`);
             if (quick) write(`${C.dim}  ${path.basename(quick.source)} → ${path.join("src", "main.cpp")} in the base${C.reset}\n`);
             if (env.kind === "wsl") write(`${C.dim}  WSL ${env.distro ?? "(default distribution)"} · ${env.buildRoot}${C.reset}\n`);
             else write(`${C.dim}  base: ${root.fsPath}${C.reset}\n`);
-            if (needsConfigure && /\bmake\b/.test(command)) write(`${C.dim}  (first build: CMake will configure the build/ folder first)${C.reset}\n`);
+            write(`${C.dim}  ${fw === "hakkun" ? "Hakkun" : "exlaunch"} base${C.reset}\n`);
+            if (needsConfigure && fw === "hakkun") write(`${C.dim}  (first build: CMake configures build/ — Hakkun may download its stdlib and compile sail first, this takes a while)${C.reset}\n`);
+            else if (needsConfigure && /\bmake\b/.test(command)) write(`${C.dim}  (first build: CMake will configure the build/ folder first)${C.reset}\n`);
             write("\n");
 
             let buf = "";
@@ -231,7 +250,14 @@ export class BuildRunner {
                 else {
                     write(`${C.red}${C.bold}✘ ${LABELS[action]}: failed (code ${code}) in ${secs} s — ${parser.errorCount} error(s)${C.reset}\n`);
                     if (/command not found|No such file/.test(parser.diags.map((d) => d.message).join("\n")) || code === 127) {
-                        write(`${C.yellow}Tip: check DEVKITPRO in WSL (setting odysseydoc.build.env) and that cmake/make are installed.${C.reset}\n`);
+                        write(
+                            fw === "hakkun"
+                                ? `${C.yellow}Tip: Hakkun needs CMake, make or ninja, Clang/LLVM/LLD 19+, and Python 3 with pyelftools, mmh3 and lz4, and a "python" command (python-is-python3) — in WSL on Windows.${C.reset}\n`
+                                : `${C.yellow}Tip: check DEVKITPRO in WSL (setting odysseydoc.build.env) and that cmake/make are installed.${C.reset}\n`,
+                        );
+                    }
+                    if (parser.diags.some((d) => d.code === "odysseydoc-undefined-symbol")) {
+                        write(`${C.yellow}Undefined game symbols: use the quick fix on the error (or the command "OdysseyDoc: Declare a symbol in the Hakkun syms/") to declare them in syms/.${C.reset}\n`);
                     }
                 }
                 if (ok && quick) {
@@ -291,6 +317,7 @@ export class BuildRunner {
             const sev = d.severity === "error" ? vscode.DiagnosticSeverity.Error : d.severity === "warning" ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information;
             const diag = new vscode.Diagnostic(range, d.message, sev);
             diag.source = d.source;
+            if (d.code) diag.code = d.code;
             if (d.notes.length) {
                 diag.relatedInformation = d.notes.map(
                     (n) => new vscode.DiagnosticRelatedInformation(new vscode.Location(vscode.Uri.file(n.file), new vscode.Position(Math.max(0, n.line - 1), Math.max(0, n.col - 1))), n.message),

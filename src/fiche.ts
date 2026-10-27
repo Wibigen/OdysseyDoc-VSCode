@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { CLASS_KINDS, Detail, GHIDRA_BASE, hex, HOOK_LABEL, hookSafety, KIND_LABEL, MAIN_BASE, SiteIndex, STATUS_LABEL } from "./core/site";
 import { HookKind } from "./core/hookgen";
-import { generateHookCommand, insertInclude } from "./hooks";
+import { currentCppEditor, generateHookCommand, insertInclude } from "./hooks";
+import { frameworkFor } from "./env";
 import { signature } from "./hover";
 import { decompSnippet, openGhidra, openOnSite, openSource, stripPseudoHeader } from "./sources";
 import { DocState } from "./state";
@@ -87,6 +88,7 @@ export class FichePanel {
         return {
             id: i,
             kind: k,
+            framework: frameworkFor(currentCppEditor()?.document.getText()),
             kindLabel: KIND_LABEL[k] ?? k,
             q: ix.q(i),
             sig: signature(ix, i, d),

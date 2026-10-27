@@ -5,13 +5,15 @@ import { BuildAction, BuildRunner, DocTaskProvider } from "./build";
 import { setupClangd } from "./clangd";
 import { hex, parseAddr } from "./core/site";
 import { addDeployTargetWizard, deployAll } from "./deploy";
-import { cfg, locateBase, projectRoot } from "./env";
+import { baseFramework, cfg, locateBase, projectRoot } from "./env";
+import { addSymbolToSyms } from "./framework";
+import { SymInlayHints } from "./symfile";
 import { FichePanel } from "./fiche";
 import { generateHookCommand, insertInclude, trackCppEditors } from "./hooks";
 import { DocHoverProvider } from "./hover";
 import { registerLens } from "./lens";
 import { DocDefinitionProvider, FieldInlayHints, GhidraInlayHints } from "./pseudo";
-import { resolveAt } from "./resolver";
+import { findByMangled, resolveAt } from "./resolver";
 import { pickEntity } from "./search";
 import { besideDefault, GHIDRA_SCHEME, openGhidra, openOnSite, openSource, SiteDocProvider, SRC_SCHEME } from "./sources";
 import { DocState } from "./state";
@@ -22,6 +24,7 @@ const CPP: vscode.DocumentSelector = [
     { language: "c", scheme: "file" },
     { scheme: GHIDRA_SCHEME },
     { scheme: SRC_SCHEME },
+    { language: "hakkun-sym", scheme: "file" },
 ];
 
 export function activate(ctx: vscode.ExtensionContext) {
@@ -48,6 +51,7 @@ export function activate(ctx: vscode.ExtensionContext) {
         vscode.languages.registerDefinitionProvider(CPP, new DocDefinitionProvider(st)),
         vscode.languages.registerInlayHintsProvider([{ scheme: GHIDRA_SCHEME }], new GhidraInlayHints(st)),
         vscode.languages.registerInlayHintsProvider([{ scheme: GHIDRA_SCHEME }], new FieldInlayHints(st)),
+        vscode.languages.registerInlayHintsProvider([{ language: "hakkun-sym", scheme: "file" }], new SymInlayHints(st)),
         vscode.tasks.registerTaskProvider("odysseydoc", new DocTaskProvider(runner)),
     );
     registerLens(ctx, st);
@@ -112,6 +116,43 @@ export function activate(ctx: vscode.ExtensionContext) {
         if (out.length) (ok ? vscode.window.showInformationMessage : vscode.window.showErrorMessage)(out.join("  •  "));
     });
     reg("odysseydoc.addDeployTarget", () => addDeployTargetWizard());
+    reg("odysseydoc.addSymbolToSyms", async (arg?: unknown) => {
+        const root = projectRoot() ?? (await locateBase("to declare a symbol in its syms/"));
+        if (!root) return;
+        if (baseFramework(root) !== "hakkun") {
+            vscode.window.showWarningMessage("The located base is not a Hakkun base: syms/ only exists in Hakkun projects.");
+            return;
+        }
+        let sym = typeof arg === "string" ? arg : undefined;
+        let declPath: string | undefined;
+        const ix = await st.ix();
+        if (sym) {
+            const ids = await findByMangledCmd(sym);
+            if (ids.length) declPath = (await st.detail(ids[0])).decl?.f;
+        } else {
+            const id = await entityArg(arg, true);
+            if (id === undefined) return;
+            const d = await st.detail(id);
+            sym = (d.bin || []).flatMap((b) => b.lab).find((l) => l.startsWith("_Z")) ?? d.mangled;
+            declPath = d.decl?.f ?? d.def?.f;
+            if (!sym) {
+                vscode.window.showWarningMessage(`${ix.q(id)} has no mangled symbol in the binary.`);
+                return;
+            }
+        }
+        try {
+            const rel = addSymbolToSyms(sym, declPath);
+            if (rel === "") vscode.window.showInformationMessage(`${sym} is already declared in syms/.`);
+            else if (rel) {
+                vscode.window.showInformationMessage(`${sym} declared in ${rel.split(path.sep).join("/")}.`, "Open").then((a) => {
+                    if (a) vscode.window.showTextDocument(vscode.Uri.joinPath(root, ...rel.split(path.sep)), { preview: true });
+                });
+            }
+        } catch (e) {
+            vscode.window.showErrorMessage(`Could not write to syms/: ${e instanceof Error ? e.message : e}`);
+        }
+    });
+    const findByMangledCmd = async (sym: string) => findByMangled(st, await st.ix(), sym);
     reg("odysseydoc.setupClangd", () => setupClangd(st, runner).catch((e) => vscode.window.showErrorMessage(`clangd: ${e}`)));
 
     // documentation
@@ -224,7 +265,7 @@ export function activate(ctx: vscode.ExtensionContext) {
             updateBaseContext();
         }),
         vscode.workspace.onDidChangeConfiguration((e) => {
-            if (e.affectsConfiguration("odysseydoc.exlaunchBase")) {
+            if (e.affectsConfiguration("odysseydoc.exlaunchBase") || e.affectsConfiguration("odysseydoc.framework")) {
                 hooksTree.refresh();
                 updateBaseContext();
             }
@@ -242,10 +283,11 @@ export function activate(ctx: vscode.ExtensionContext) {
     function updateBaseContext() {
         const r = projectRoot();
         vscode.commands.executeCommand("setContext", "odysseydoc.hasBase", !!r);
+        vscode.commands.executeCommand("setContext", "odysseydoc.isHakkun", !!r && baseFramework(r) === "hakkun");
         quickItem.text = "$(play) Build .cpp";
         quickItem.tooltip = r
-            ? `Quick build (F7): copies the active .cpp to ${path.join(r.fsPath, "src", "main.cpp")}, runs make, then copies the build next to the .cpp`
-            : "Quick build (F7) — you will be asked for the exlaunch base";
+            ? `Quick build (F7): copies the active .cpp to ${path.join(r.fsPath, "src", "main.cpp")}, builds the base, then copies the build next to the .cpp`
+            : "Quick build (F7) — you will be asked for the mod base (exlaunch or Hakkun)";
         const ed = vscode.window.activeTextEditor;
         if (ed && ed.document.uri.scheme === "file" && /^(cpp|c)$/.test(ed.document.languageId)) quickItem.show();
         else quickItem.hide();

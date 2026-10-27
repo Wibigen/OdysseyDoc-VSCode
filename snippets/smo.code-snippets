@@ -1,6 +1,9 @@
 {
   "Hook trampoline (exlaunch)": {
-    "prefix": ["smo-hook-trampoline", "hooktramp"],
+    "prefix": [
+      "smo-hook-trampoline",
+      "hooktramp"
+    ],
     "description": "HOOK_DEFINE_TRAMPOLINE: your code, then the original function (Orig)",
     "body": [
       "HOOK_DEFINE_TRAMPOLINE(${1:Name}Hook) {",
@@ -12,7 +15,10 @@
     ]
   },
   "Hook replace (exlaunch)": {
-    "prefix": ["smo-hook-replace", "hookrepl"],
+    "prefix": [
+      "smo-hook-replace",
+      "hookrepl"
+    ],
     "description": "HOOK_DEFINE_REPLACE: replaces the function entirely",
     "body": [
       "HOOK_DEFINE_REPLACE(${1:Name}Replace) {",
@@ -23,7 +29,10 @@
     ]
   },
   "Hook inline (exlaunch)": {
-    "prefix": ["smo-hook-inline", "hookinline"],
+    "prefix": [
+      "smo-hook-inline",
+      "hookinline"
+    ],
     "description": "HOOK_DEFINE_INLINE: runs at one instruction, with register access",
     "body": [
       "HOOK_DEFINE_INLINE(${1:Name}Inline) {",
@@ -35,15 +44,28 @@
     ]
   },
   "Install a hook by symbol": {
-    "prefix": ["smo-install-symbol", "installsym"],
-    "body": ["${1:Name}Hook::InstallAtSymbol(\"${2:_ZN...}\");"]
+    "prefix": [
+      "smo-install-symbol",
+      "installsym"
+    ],
+    "body": [
+      "${1:Name}Hook::InstallAtSymbol(\"${2:_ZN...}\");"
+    ]
   },
   "Install a hook by offset": {
-    "prefix": ["smo-install-offset", "installoff"],
-    "body": ["${1:Name}Hook::InstallAtOffset(${2:0x0});"]
+    "prefix": [
+      "smo-install-offset",
+      "installoff"
+    ],
+    "body": [
+      "${1:Name}Hook::InstallAtOffset(${2:0x0});"
+    ]
   },
   "Full exl_main": {
-    "prefix": ["smo-exl-main", "exlmain"],
+    "prefix": [
+      "smo-exl-main",
+      "exlmain"
+    ],
     "description": "exlaunch entry point",
     "body": [
       "extern \"C\" void exl_main(void* x0, void* x1) {",
@@ -55,7 +77,10 @@
     ]
   },
   "Instruction patch (CodePatcher)": {
-    "prefix": ["smo-patch", "codepatch"],
+    "prefix": [
+      "smo-patch",
+      "codepatch"
+    ],
     "description": "Rewrites one or more instructions at a main offset",
     "body": [
       "exl::patch::CodePatcher ${1:p}(${2:0x0});",
@@ -63,11 +88,19 @@
     ]
   },
   "Log exlaunch": {
-    "prefix": ["smo-log", "exllog"],
-    "body": ["Logging.Log(\"${1:message} %d\", ${2:value});$0"]
+    "prefix": [
+      "smo-log",
+      "exllog"
+    ],
+    "body": [
+      "Logging.Log(\"${1:message} %d\", ${2:value});$0"
+    ]
   },
   "Actor nerves (anonymous namespace)": {
-    "prefix": ["smo-nerves", "nerves"],
+    "prefix": [
+      "smo-nerves",
+      "nerves"
+    ],
     "description": "Declares a class's nerves with NERVE_IMPL + NERVES_MAKE_NOSTRUCT",
     "body": [
       "namespace {",
@@ -80,7 +113,10 @@
     ]
   },
   "Nerve exe function": {
-    "prefix": ["smo-exe", "exe"],
+    "prefix": [
+      "smo-exe",
+      "exe"
+    ],
     "description": "void Class::exeXxx() with isFirstStep / isActionEnd",
     "body": [
       "void ${1:MyActor}::exe${2:Wait}() {",
@@ -94,7 +130,10 @@
     ]
   },
   "Actor class (header)": {
-    "prefix": ["smo-actor-header", "actorh"],
+    "prefix": [
+      "smo-actor-header",
+      "actorh"
+    ],
     "description": "OdysseyDecomp-style LiveActor skeleton",
     "body": [
       "#pragma once",
@@ -116,7 +155,10 @@
     ]
   },
   "Actor class (source)": {
-    "prefix": ["smo-actor-cpp", "actorcpp"],
+    "prefix": [
+      "smo-actor-cpp",
+      "actorcpp"
+    ],
     "description": "Minimal LiveActor implementation",
     "body": [
       "#include \"${1:MyActor}.h\"",
@@ -153,11 +195,21 @@
     ]
   },
   "Controller button pressed": {
-    "prefix": ["smo-pad", "padtrigger"],
-    "body": ["if (al::isPadTrigger${1|A,B,X,Y,L,R,ZL,ZR,Up,Down,Left,Right,Plus,Minus|}(${2:-1})) {", "    $0", "}"]
+    "prefix": [
+      "smo-pad",
+      "padtrigger"
+    ],
+    "body": [
+      "if (al::isPadTrigger${1|A,B,X,Y,L,R,ZL,ZR,Up,Down,Left,Right,Plus,Minus|}(${2:-1})) {",
+      "    $0",
+      "}"
+    ]
   },
   "Per-frame hook on StageScene::exePlay": {
-    "prefix": ["smo-hook-stagescene", "exeplay"],
+    "prefix": [
+      "smo-hook-stagescene",
+      "exeplay"
+    ],
     "description": "Trampoline on StageScene::exePlay (called every in-game frame)",
     "body": [
       "HOOK_DEFINE_TRAMPOLINE(StageSceneExePlayHook) {",
@@ -170,7 +222,89 @@
     ]
   },
   "Formatted FixedSafeString": {
-    "prefix": ["smo-format", "fmtstr"],
-    "body": ["sead::FixedSafeString<${1:0x100}> ${2:str};", "${2:str}.format(\"${3:%s}\", ${4:arg});$0"]
+    "prefix": [
+      "smo-format",
+      "fmtstr"
+    ],
+    "body": [
+      "sead::FixedSafeString<${1:0x100}> ${2:str};",
+      "${2:str}.format(\"${3:%s}\", ${4:arg});$0"
+    ]
+  },
+  "Hakkun trampoline hook": {
+    "prefix": [
+      "hk-trampoline",
+      "hktramp"
+    ],
+    "description": "Hakkun HkTrampoline: your code, then the original (orig)",
+    "body": [
+      "HkTrampoline ${1:name}Hook = [](TrampolineStatic(), ${2:${3:Class}* self}) -> ${4:void} {",
+      "    $0",
+      "    ${5:orig(self);}",
+      "};"
+    ]
+  },
+  "Hakkun replace hook": {
+    "prefix": [
+      "hk-replace",
+      "hkrepl"
+    ],
+    "description": "Hakkun HkReplace: replaces the function entirely",
+    "body": [
+      "HkReplace<${1:void}, ${2:Class}*> ${3:name}Replace = []($2* self) -> $1 {",
+      "    $0",
+      "};"
+    ]
+  },
+  "Hakkun hkMain": {
+    "prefix": [
+      "hk-main",
+      "hkmain"
+    ],
+    "description": "Hakkun entry point",
+    "body": [
+      "extern \"C\" void hkMain() {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Hakkun install by symbol": {
+    "prefix": [
+      "hk-install-sym",
+      "installatsym"
+    ],
+    "description": "Install a Hakkun hook on a symbol (declare it in syms/)",
+    "body": [
+      "${1:name}.installAtSym<\"${2:_ZN...}\">();$0"
+    ]
+  },
+  "Hakkun install by offset": {
+    "prefix": [
+      "hk-install-offset"
+    ],
+    "description": "Install a Hakkun hook at a main offset (SMO 1.0.0 only)",
+    "body": [
+      "${1:name}.installAtMainOffset(${2:0x0});$0"
+    ]
+  },
+  "Hakkun BL to a function": {
+    "prefix": [
+      "hk-bl",
+      "writebl"
+    ],
+    "description": "Write a BL to your function at an instruction of main",
+    "body": [
+      "hk::hook::writeBranchLinkAtMainOffset(${1:0x0}, ${2:myFunc});$0"
+    ]
+  },
+  "Hakkun assemble patch": {
+    "prefix": [
+      "hk-asm",
+      "hkpatch"
+    ],
+    "description": "Patch instructions with Hakkun's constexpr assembler",
+    "body": [
+      "hk::hook::a64::assemble<\"${1|nop,ret,mov w0\\, #1|}\">().installAtMainOffset(${2:0x0});$0"
+    ]
   }
 }

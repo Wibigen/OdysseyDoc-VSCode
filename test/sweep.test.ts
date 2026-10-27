@@ -42,6 +42,7 @@ for (const f of fs.readdirSync(path.join(D, "e"))) {
         try { for (const b of d.bin || []) hookSafety(b); } catch (e) { fail("hookSafety", id, e); }
         if (d.bin?.length) for (const kind of ["trampoline", "replace", "inline"] as const) {
             try { generateHook(ix, id, d, { kind, install: "symbol" }); } catch (e) { fail("hook " + kind, id, e); }
+            try { generateHook(ix, id, d, { kind, install: "symbol", framework: "hakkun" }); } catch (e) { fail("hakkun hook " + kind, id, e); }
         }
         try { onMsg({ data: { type: "entity", data: JSON.parse(JSON.stringify(data)), canBack: false } }); } catch (e) { fail("webview", id, e); }
     }

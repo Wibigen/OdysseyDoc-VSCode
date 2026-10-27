@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import { CompileEntry, parseGccIncludeDirs, shellSplit, transformEntry } from "./core/compdb";
-import { buildDir, ensureBase, getExecEnv, projectRoot, runCapture } from "./env";
+import { baseFramework, buildDir, ensureBase, getExecEnv, projectRoot, runCapture } from "./env";
 import { BuildRunner } from "./build";
 import { DocState } from "./state";
 
@@ -60,7 +60,7 @@ export async function setupClangd(st: DocState, runner: BuildRunner, silent = fa
     if (!fs.existsSync(ccHost)) {
         if (silent) return false;
         const go = await vscode.window.showInformationMessage(
-            "build/compile_commands.json does not exist yet: CMake has to be configured once (make configure).",
+            `build/compile_commands.json does not exist yet: CMake has to be configured once (${baseFramework(root) === "hakkun" ? "cmake -S . -B build" : "make configure"}).`,
             "Configure now",
             "Cancel",
         );
@@ -78,10 +78,15 @@ export async function setupClangd(st: DocState, runner: BuildRunner, silent = fa
         if (!entries.length) throw new Error("compile_commands.json is empty");
         const first = entries[0].arguments ?? shellSplit(entries[0].command ?? "");
         const compiler = first[0];
-        progress.report({ message: "reading devkitA64 include folders…" });
-        const r = await runCapture(`${compiler.includes(" ") ? `'${compiler}'` : compiler} -xc++ -std=gnu++23 -E -v - </dev/null 2>&1`, env, root.fsPath, undefined, 30000);
-        const gccDirs = parseGccIncludeDirs(r.out + "\n" + r.err);
-        if (!gccDirs.length) st.log(`clangd: could not read the system include folders of ${compiler}:\n${r.out}${r.err}`);
+        // Hakkun builds with clang: its compile_commands only need the path mapping
+        const native = baseFramework(root) === "hakkun" || /clang/.test(compiler);
+        let gccDirs: string[] = [];
+        if (!native) {
+            progress.report({ message: "reading devkitA64 include folders…" });
+            const r = await runCapture(`${compiler.includes(" ") ? `'${compiler}'` : compiler} -xc++ -std=gnu++23 -E -v - </dev/null 2>&1`, env, root.fsPath, undefined, 30000);
+            gccDirs = parseGccIncludeDirs(r.out + "\n" + r.err);
+            if (!gccDirs.length) st.log(`clangd: could not read the system include folders of ${compiler}:\n${r.out}${r.err}`);
+        }
 
         progress.report({ message: `converting ${entries.length} entries…` });
         const mapPath = (p: string) => env.mapper.toHost(p);
@@ -89,6 +94,7 @@ export async function setupClangd(st: DocState, runner: BuildRunner, silent = fa
             transformEntry(e, {
                 mapPath,
                 gccIncludes: gccDirs,
+                native,
                 readFile: (p) => {
                     try {
                         return fs.readFileSync(p, "utf8");
@@ -156,7 +162,7 @@ export async function setupClangd(st: DocState, runner: BuildRunner, silent = fa
         }
 
         vscode.window.showInformationMessage(
-            `clangd configured from the base (${out.length} file(s)): code completion works for your .cpp files, wherever they are. ${gccDirs.length ? "" : "⚠ devkitA64 system headers not found (see the OdysseyDoc output)."}`,
+            `clangd configured from the base (${out.length} file(s)): code completion works for your .cpp files, wherever they are. ${native || gccDirs.length ? "" : "⚠ devkitA64 system headers not found (see the OdysseyDoc output)."}`,
         );
         st.log(`clangd: compile_commands converted → ${outDir} (system folders: ${gccDirs.join(", ") || "none"})`);
         return true;

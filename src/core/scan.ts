@@ -1,11 +1,13 @@
-/** Finds hooks / installs / patches in a source file. */
+/** Finds hooks / installs / patches in a source file (exlaunch and Hakkun syntax). */
 
-export type RefKind = "symbol" | "offset" | "ptr" | "patch";
+export type RefKind = "symbol" | "offset" | "ptr" | "patch" | "write";
 
 export interface HookRef {
     kind: RefKind;
     hookName: string; // "" for a patch
-    method: string; // InstallAtSymbol, InstallAtOffset, CodePatcher...
+    method: string; // InstallAtSymbol, InstallAtOffset, CodePatcher, installAtSym, installAtMainOffset...
+    /** Hakkun: the symbol goes through sail (it must be declared in syms/) */
+    sail?: boolean;
     value: string; // raw text (symbol or number)
     num?: number; // numeric value (offset)
     start: number; // index of the value in the text
@@ -16,6 +18,7 @@ export interface HookRef {
 export interface HookDef {
     name: string;
     kind: "trampoline" | "replace" | "inline" | "legacy";
+    framework: "exlaunch" | "hakkun";
     start: number;
     end: number;
 }
@@ -26,6 +29,17 @@ const SYM_RX = /\b(\w+)\s*::\s*(InstallAtSymbol)\s*\(\s*"([^"]*)"/g;
 const OFF_RX = /\b(\w+)\s*::\s*(InstallAtOffset|InstallAtPtr)\s*\(\s*(0x[0-9a-fA-F']+|\d+)/g;
 const PATCH_RX = /\b(CodePatcher|RandomAccessPatcher|StreamPatcher|GetTargetOffset|INJECT_HOOK(?:_T)?)\b\s*(?:\w+\s*)?[({]\s*(0x[0-9a-fA-F']+)/g;
 const LOOKUP_RX = /\bLookupSymbol\s*\(\s*[^,]+,\s*"([^"]*)"/g;
+
+// Hakkun
+const NUM = "(0x[0-9a-fA-F']+|\\d+)";
+const HK_DEF_RX = /\b(HkTrampoline|HkReplace(?:VarArgs)?|hk::hook::(?:Trampoline|Replace))\b(?:\s*<[^;{}=]*>)?\s+(\w+)\s*(?:=|\{|\()/g;
+const HK_LEGACY_RX = /\b(?:static\s+)?(?:auto|const\s+auto)\s+(\w+)\s*=\s*(?:hk::)?hook::(trampoline|replace)\s*\(/g;
+const HK_SYM_RX = /(\w+|\))\s*(?:\.|->)\s*installAtSym\s*<\s*"([^"]*)"\s*>/g;
+const HK_SYMFN_RX = /\b(write(?:Branch|BranchLink)AtSym|lookupSymbol|InitializeGuard|writeVftHook)\s*<\s*"([^"]*)"/g;
+const HK_OFF_RX = new RegExp(`(\\w+|\\))\\s*(?:\\.|->)\\s*(installAtMainOffset)\\s*\\(\\s*${NUM}`, "g");
+const HK_MODOFF_RX = new RegExp(`(\\w+)\\s*(?:\\.|->)\\s*(installAtOffset)\\s*\\(\\s*(?:hk::)?ro::getMainModule\\s*\\(\\s*\\)\\s*,\\s*${NUM}`, "g");
+const HK_BRANCH_RX = new RegExp(`\\b(write(?:Branch|BranchLink)AtMainOffset)\\s*\\(\\s*${NUM}`, "g");
+const HK_WRITE_RX = new RegExp(`getMainModule\\s*\\(\\s*\\)\\s*->\\s*(writeRo|writeRw)\\b(?:\\s*<[^>]*>)?\\s*\\(\\s*${NUM}`, "g");
 
 function stripComments(text: string): string {
     // replace comments with spaces (keeps indices)
@@ -39,10 +53,40 @@ export function scanSource(text: string): { refs: HookRef[]; defs: HookDef[] } {
     let m: RegExpExecArray | null;
     DEF_RX.lastIndex = 0;
     while ((m = DEF_RX.exec(t))) {
-        defs.push({ name: m[2], kind: m[1].toLowerCase() as HookDef["kind"], start: m.index, end: m.index + m[0].length });
+        defs.push({ name: m[2], kind: m[1].toLowerCase() as HookDef["kind"], framework: "exlaunch", start: m.index, end: m.index + m[0].length });
     }
     LEGACY_RX.lastIndex = 0;
-    while ((m = LEGACY_RX.exec(t))) defs.push({ name: m[1], kind: "legacy", start: m.index, end: m.index + m[0].length });
+    while ((m = LEGACY_RX.exec(t))) defs.push({ name: m[1], kind: "legacy", framework: "exlaunch", start: m.index, end: m.index + m[0].length });
+    HK_DEF_RX.lastIndex = 0;
+    while ((m = HK_DEF_RX.exec(t))) {
+        if (/^(using|return|class|struct)$/.test(m[2])) continue;
+        defs.push({ name: m[2], kind: /Replace/.test(m[1]) ? "replace" : "trampoline", framework: "hakkun", start: m.index, end: m.index + m[0].length });
+    }
+    HK_LEGACY_RX.lastIndex = 0;
+    while ((m = HK_LEGACY_RX.exec(t))) defs.push({ name: m[1], kind: m[2] as "trampoline" | "replace", framework: "hakkun", start: m.index, end: m.index + m[0].length });
+    const pushNum = (kind: RefKind, hookName: string, method: string, raw: string, mm: RegExpExecArray) => {
+        const vStart = mm.index + mm[0].length - raw.length;
+        const num = parseInt(raw.replace(/'/g, ""), /^0x/i.test(raw) ? 16 : 10);
+        refs.push({ kind, hookName, method, value: raw, num, start: vStart, end: vStart + raw.length, stmtStart: mm.index });
+    };
+    HK_SYM_RX.lastIndex = 0;
+    while ((m = HK_SYM_RX.exec(t))) {
+        const vStart = m.index + m[0].indexOf('"') + 1;
+        refs.push({ kind: "symbol", hookName: m[1] === ")" ? "" : m[1], method: "installAtSym", value: m[2], start: vStart, end: vStart + m[2].length, stmtStart: m.index + (m[1] === ")" ? 1 : 0), sail: true });
+    }
+    HK_SYMFN_RX.lastIndex = 0;
+    while ((m = HK_SYMFN_RX.exec(t))) {
+        const vStart = m.index + m[0].indexOf('"') + 1;
+        refs.push({ kind: "symbol", hookName: "", method: m[1], value: m[2], start: vStart, end: vStart + m[2].length, stmtStart: m.index, sail: true });
+    }
+    HK_OFF_RX.lastIndex = 0;
+    while ((m = HK_OFF_RX.exec(t))) pushNum(m[1] === ")" ? "patch" : "offset", m[1] === ")" ? "" : m[1], m[2], m[3], m);
+    HK_MODOFF_RX.lastIndex = 0;
+    while ((m = HK_MODOFF_RX.exec(t))) pushNum("offset", m[1], m[2], m[3], m);
+    HK_BRANCH_RX.lastIndex = 0;
+    while ((m = HK_BRANCH_RX.exec(t))) pushNum("patch", "", m[1], m[2], m);
+    HK_WRITE_RX.lastIndex = 0;
+    while ((m = HK_WRITE_RX.exec(t))) pushNum("write", "", m[1], m[2], m);
     SYM_RX.lastIndex = 0;
     while ((m = SYM_RX.exec(t))) {
         const vStart = m.index + m[0].length - m[3].length;

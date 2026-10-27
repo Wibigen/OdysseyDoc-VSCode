@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds OdysseyDoc-v3.2.vsix next to this script (Linux / WSL / macOS).
+# Builds OdysseyDoc-v4.0.vsix next to this script (Linux / WSL / macOS).
 # KEEP_NODE_MODULES=1 keeps node_modules; INSTALL=1 installs it into VS Code.
 set -euo pipefail
 cd "$(dirname "$0")"
-VSIX="OdysseyDoc-v3.2.vsix"
+VSIX="OdysseyDoc-v4.0.vsix"
 command -v npm >/dev/null || { echo "npm not found: install Node.js (LTS)"; exit 1; }
 echo "[1/4] npm install";  npm install --no-audit --no-fund --loglevel=error
 echo "[2/4] compile";      npm run -s compile

@@ -89,7 +89,7 @@ function render(d, canBack) {
   if (d.bins.length) {
     a.push('<button class="primary" data-hook="trampoline">⚡ Hook trampoline</button>');
     a.push('<button data-hook="replace">Hook replace</button>');
-    a.push('<button data-hook="inline">Hook inline</button>');
+    if (d.framework !== "hakkun") a.push('<button data-hook="inline">Hook inline</button>');
   }
   a.push('<button data-cmd="source"' + (d.decl || d.def ? "" : " disabled") + ">Decomp source</button>");
   if (d.isFn) a.push('<button data-cmd="ghidra">Ghidra pseudo-code</button>');

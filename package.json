@@ -1,12 +1,12 @@
 {
   "name": "odysseydoc",
-  "version": "3.2.0",
-  "description": "The OdysseyDoc documentation (Super Mario Odyssey decomp + Ghidra pseudo-code) inside VS Code: hovers, details, calls, fields, safe exlaunch hooks, WSL build and deployment.",
+  "version": "4.0.0",
+  "description": "The OdysseyDoc documentation (Super Mario Odyssey decomp + Ghidra pseudo-code) inside VS Code: hovers, details, calls, fields, safe exlaunch and Hakkun hooks, sail symbols, WSL build and deployment.",
   "main": "./dist/extension.js",
   "scripts": {
     "compile": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=dist/extension.js --minify --sourcemap=external",
     "watch": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=dist/extension.js --sourcemap --watch",
-    "package": "npm run compile && vsce package --no-dependencies -o OdysseyDoc-v3.2.vsix",
+    "package": "npm run compile && vsce package --no-dependencies -o OdysseyDoc-v4.0.vsix",
     "test": "esbuild test/misc.test.ts --bundle --platform=node --outfile=out-test/misc.test.js --log-level=warning && node out-test/misc.test.js",
     "test:site": "esbuild test/sweep.test.ts --bundle --platform=node --outfile=out-test/sweep.test.js --alias:vscode=./test/vscode-stub.ts --log-level=warning && node out-test/sweep.test.js"
   },
@@ -18,7 +18,9 @@
     "switch",
     "modding",
     "decomp",
-    "ghidra"
+    "ghidra",
+    "hakkun",
+    "sail"
   ],
   "author": {
     "name": "WibiDev"
@@ -48,7 +50,9 @@
   "activationEvents": [
     "onLanguage:cpp",
     "onLanguage:c",
+    "onLanguage:hakkun-sym",
     "workspaceContains:lib/exlaunch/exlaunch.hpp",
+    "workspaceContains:config/VersionList.sym",
     "onView:odysseydoc.entities"
   ],
   "contributes": {
@@ -67,7 +71,7 @@
       },
       {
         "command": "odysseydoc.locateBase",
-        "title": "Locate the exlaunch base",
+        "title": "Locate the mod base (exlaunch or Hakkun)",
         "category": "OdysseyDoc",
         "icon": "$(folder-opened)"
       },
@@ -242,6 +246,12 @@
         "title": "Open the entity on the OdysseyDoc site",
         "category": "OdysseyDoc",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "odysseydoc.addSymbolToSyms",
+        "title": "Declare a symbol in the Hakkun syms/",
+        "category": "OdysseyDoc",
+        "icon": "$(symbol-key)"
       }
     ],
     "submenus": [
@@ -330,6 +340,11 @@
           "command": "odysseydoc.openSite",
           "when": "view == odysseydoc.entities",
           "group": "1_data@2"
+        },
+        {
+          "command": "odysseydoc.addSymbolToSyms",
+          "when": "view == odysseydoc.hooks && odysseydoc.isHakkun",
+          "group": "2_setup@3"
         }
       ],
       "view/item/context": [
@@ -499,7 +514,7 @@
     "viewsWelcome": [
       {
         "view": "odysseydoc.hooks",
-        "contents": "No hooks yet.\n[$(folder-opened) Locate the exlaunch base](command:odysseydoc.locateBase)\n[$(zap) Generate a hook](command:odysseydoc.searchAndHook)\n[$(play) Quick build of the .cpp](command:odysseydoc.quickBuild)\n[$(globe) Open the OdysseyDoc site](command:odysseydoc.openSite)"
+        "contents": "No hooks yet.\n[$(folder-opened) Locate the mod base (exlaunch or Hakkun)](command:odysseydoc.locateBase)\n[$(zap) Generate a hook](command:odysseydoc.searchAndHook)\n[$(play) Quick build of the .cpp](command:odysseydoc.quickBuild)\n[$(globe) Open the OdysseyDoc site](command:odysseydoc.openSite)"
       }
     ],
     "taskDefinitions": [
@@ -559,7 +574,61 @@
         "odysseydoc.exlaunchBase": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Folder of your exlaunch base ([SMO-Exlaunch-Base](https://github.com/Fuzzy2319/SMO-Exlaunch-Base)). Windows path, UNC (`\\\\wsl.localhost\\Ubuntu\\home\\…`) or WSL Linux path (`/home/…`). Empty = asked on the first build (command **OdysseyDoc: Locate the exlaunch base**)."
+          "markdownDescription": "Folder of your mod base: an exlaunch base ([SMO-Exlaunch-Base](https://github.com/Fuzzy2319/SMO-Exlaunch-Base)) or a Hakkun project ([Hakkun-Example](https://github.com/fruityloops1/Hakkun-Example), with its submodules). Windows path, UNC (`\\\\wsl.localhost\\Ubuntu\\home\\…`) or WSL Linux path (`/home/…`). Empty = asked on the first build (command **OdysseyDoc: Locate the mod base**). The setting keeps its old name for compatibility."
+        },
+        "odysseydoc.framework": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "exlaunch",
+            "hakkun"
+          ],
+          "markdownDescription": "Mod framework. `auto` = detected from the file (`HOOK_DEFINE_…`/`exl_main` → exlaunch, `HkTrampoline`/`hkMain`/`hk/…` includes → Hakkun), then from the located base (`lib/exlaunch` → exlaunch, `sys/` + `config/VersionList.sym` → Hakkun)."
+        },
+        "odysseydoc.hakkun.buildType": {
+          "type": "string",
+          "default": "Release",
+          "enum": [
+            "Release",
+            "Debug"
+          ],
+          "markdownDescription": "Hakkun: `CMAKE_BUILD_TYPE` used when the build folder is configured."
+        },
+        "odysseydoc.hakkun.buildCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Hakkun: build command (empty = configure `build/` if needed, then `cmake --build build --parallel $(nproc)`)."
+        },
+        "odysseydoc.hakkun.configureCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Hakkun: configure command (empty = `cmake -S . -B build -DCMAKE_BUILD_TYPE=<buildType>`)."
+        },
+        "odysseydoc.hakkun.cleanCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Hakkun: clean command (empty = `cmake --build build --target clean`)."
+        },
+        "odysseydoc.hakkun.addSymbols": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Hakkun: when a hook is generated with `installAtSym<\"…\">()`, declare the symbol in the base's `syms/` (sail aborts at boot with `UnresolvedSymbol` otherwise). The file mirrors the header: `src/Item/Shine.h` → `syms/game/Item/Shine.sym`."
+        },
+        "odysseydoc.hakkun.symbolVersions": {
+          "type": "string",
+          "default": "100,101,110,120",
+          "markdownDescription": "Hakkun: game versions of the block symbols are added to (`@smo:100,101,110,120`, looked up by name at runtime, like Hakkun-Example). SMO 1.3.0 has no symbol names: it needs offsets in a separate `@smo:130` block."
+        },
+        "odysseydoc.diagnostics.checkSyms": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Hakkun: report `installAtSym<\"…\">` / `writeBranch…AtSym<\"…\">` symbols that are not declared in `syms/`, and `.sym` entries that are not functions of SMO 1.0.0."
+        },
+        "odysseydoc.diagnostics.hakkunOffsetHint": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Hakkun: hint that `installAtMainOffset(0x…)` only works on SMO 1.0.0."
         },
         "odysseydoc.base.copyLocalIncludes": {
           "type": "boolean",
@@ -577,7 +646,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Files of the build folder to copy in addition to `subsdk9` and `main.npdm` (e.g. `subsdk9.elf`)."
+          "markdownDescription": "Files of the build folder to copy in addition to the module (`subsdk9` / `subsdk4`) and `main.npdm` (e.g. `subsdk9.elf`)."
         },
         "odysseydoc.build.useWsl": {
           "type": "string",
@@ -602,17 +671,17 @@
         "odysseydoc.build.command": {
           "type": "string",
           "default": "make",
-          "markdownDescription": "Build command (run at the project root)."
+          "markdownDescription": "exlaunch: build command (run at the project root). For Hakkun see `odysseydoc.hakkun.buildCommand`."
         },
         "odysseydoc.build.cleanCommand": {
           "type": "string",
           "default": "make clean",
-          "markdownDescription": "Clean command."
+          "markdownDescription": "exlaunch: clean command."
         },
         "odysseydoc.build.configureCommand": {
           "type": "string",
           "default": "make configure",
-          "markdownDescription": "CMake configure command (also generates `build/compile_commands.json`)."
+          "markdownDescription": "exlaunch: CMake configure command (also generates `build/compile_commands.json`)."
         },
         "odysseydoc.build.outputDir": {
           "type": "string",
@@ -622,7 +691,7 @@
         "odysseydoc.build.subsdkName": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Name of the produced subsdk (empty = read from `CMakeLists.txt`, `set(SUBSDKX …)`)."
+          "markdownDescription": "Name of the produced subsdk (empty = `set(SUBSDKX …)` of `CMakeLists.txt` for exlaunch, `set(MODULE_BINARY …)` of `config/config.cmake` for Hakkun)."
         },
         "odysseydoc.build.env": {
           "type": "object",
@@ -704,7 +773,7 @@
         "odysseydoc.deploy.titleId": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Title ID (empty = `CONFIG_TITLE_ID` from `CMakeLists.txt`, otherwise 0100000000010000)."
+          "markdownDescription": "Title ID (empty = `CONFIG_TITLE_ID` of `CMakeLists.txt` for exlaunch, `TITLE_ID` of `config/config.cmake` for Hakkun, otherwise 0100000000010000)."
         },
         "odysseydoc.deploy.modName": {
           "type": "string",
@@ -759,7 +828,7 @@
         "odysseydoc.hooks.defaultKind": {
           "type": "string",
           "default": "trampoline",
-          "markdownDescription": "Hook type when not asking.",
+          "markdownDescription": "Hook type when not asking (`inline` does not exist in Hakkun: a trampoline is used instead).",
           "enum": [
             "trampoline",
             "replace",
@@ -778,7 +847,7 @@
         "odysseydoc.hooks.insertLocation": {
           "type": "string",
           "default": "auto",
-          "markdownDescription": "Where to insert the hook: `auto` (at the cursor, or before exl_main if the cursor is inside it), `cursor`, `beforeExlMain`, `clipboard`.",
+          "markdownDescription": "Where to insert the hook: `auto` (at the cursor, or before `exl_main` / `hkMain` if the cursor is inside it), `cursor`, `beforeExlMain` (before the entry point), `clipboard`.",
           "enum": [
             "auto",
             "cursor",
@@ -822,7 +891,27 @@
           "markdownDescription": "Offer to set up clangd the first time the project is opened."
         }
       }
-    }
+    },
+    "languages": [
+      {
+        "id": "hakkun-sym",
+        "aliases": [
+          "Hakkun symbols (sail)",
+          "sym"
+        ],
+        "extensions": [
+          ".sym"
+        ],
+        "configuration": "./syntaxes/sym.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "hakkun-sym",
+        "scopeName": "source.hakkun-sym",
+        "path": "./syntaxes/sym.tmLanguage.json"
+      }
+    ]
   },
   "repository": {
     "type": "git",

@@ -5,13 +5,13 @@ cd /d "%~dp0"
 title OdysseyDoc - .vsix build
 
 rem ---------------------------------------------------------------
-rem  Builds OdysseyDoc-v3.2.vsix next to this script.
+rem  Builds OdysseyDoc-v4.0.vsix next to this script.
 rem  KEEP_NODE_MODULES=1 keeps node_modules (faster next builds).
 rem  INSTALL=1 installs the extension into VS Code right away.
 rem ---------------------------------------------------------------
 if "%KEEP_NODE_MODULES%"=="" set KEEP_NODE_MODULES=0
 if "%INSTALL%"=="" set INSTALL=1
-set VSIX=OdysseyDoc-v3.2.vsix
+set VSIX=OdysseyDoc-v4.0.vsix
 
 where node >nul 2>nul || (echo [ERROR] Node.js not found: install it from https://nodejs.org ^(LTS^) & pause & exit /b 1)
 where npm  >nul 2>nul || (echo [ERROR] npm not found. & pause & exit /b 1)

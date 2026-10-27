@@ -63,6 +63,8 @@ export interface TransformOptions {
     /** gcc system include dirs (build-side paths) */
     gccIncludes: string[];
     readFile?: (hostPath: string) => string | undefined;
+    /** the build already uses clang (Hakkun): keep its flags, only map the paths */
+    native?: boolean;
 }
 
 /** Keeps only the "library" header dirs (libstdc++ / newlib): clang ships its own stddef.h, arm_neon.h... */
@@ -125,6 +127,7 @@ export function transformEntry(e: CompileEntry, o: TransformOptions): CompileEnt
         }
         out.push(a);
     }
+    if (o.native) return { directory: o.mapPath(e.directory), file: e.file.startsWith("/") ? o.mapPath(e.file) : e.file, arguments: out };
     const sys = selectSystemDirs(o.gccIncludes);
     const extra = ["--target=aarch64-none-elf", "-nostdlibinc", "-nostdinc++", "-Wno-unknown-warning-option", "-Wno-unused-command-line-argument", "-Wno-gnu-string-literal-operator-template"];
     for (const d of sys) extra.push("-isystem", o.mapPath(d));
